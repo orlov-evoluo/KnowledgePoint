@@ -256,6 +256,8 @@
       font-weight: 500;
     }
 
+    .course-lessons + .course-lessons { margin-top: 1.4rem; }
+
     .lesson {
       margin: 0 0 0.65rem;
       padding: 0.8rem 0.9rem;
@@ -336,7 +338,7 @@
     <div class="workspace">
       <section class="courses" id="courses" aria-label="Курсы"></section>
       <section class="detail" id="lessons" aria-label="Уроки">
-        <p class="message">Выберите курс слева.</p>
+        <p class="message">Выберите курс слева или включите статус, чтобы увидеть уроки по всем курсам.</p>
       </section>
     </div>
   </div>
@@ -532,40 +534,65 @@
       coursesEl.scrollTop = scroll;
     }
 
+    function lessonCard(courseId, lesson, needTutor) {
+      const seen = watched(lesson);
+      const work = workState(lesson, needTutor);
+      const edge = work ? work.kind : (seen ? "watched" : "unwatched");
+      const chips = [
+        `<span class="chip ${seen ? "watched" : "unwatched"}">${seen ? "Просмотрено" : "Не просмотрено"}</span>`,
+      ];
+      if (work) chips.push(`<span class="chip ${work.kind}">${esc(work.label)}</span>`);
+      const ratio = testPercent(lesson.test);
+      const testScore = lesson.test && ratio !== null
+        ? `${lesson.test.completed ?? 0} из ${lesson.test.total ?? 0}`
+        : "";
+      const test = lesson.test && ratio !== null
+        ? `<div class="test"><span>${esc(testScore)}</span><div class="bar" role="img" aria-label="Тест выполнен на ${ratio} процентов"><i style="width:${ratio}%"></i></div><b>${ratio}%</b></div>`
+        : "";
+      const kind = [lesson.type === "text" ? "текст" : lesson.record ? "запись" : "", lesson.webinar ? "вебинар" : ""]
+        .filter(Boolean).join(" · ");
+      return `<article class="lesson ${edge}">
+        <div class="lesson-top">
+          <h3>${esc(lesson.name)}</h3>
+          <div class="chips">${chips.join("")}</div>
+        </div>
+        ${kind ? `<p class="kind">${esc(kind)}</p>` : ""}
+        <div class="links">${lessonLinks(courseId, lesson, needTutor)}</div>
+        ${test}
+      </article>`;
+    }
+
     function renderLessons(detail) {
       const needTutor = detail.course.needTutor;
       const lessons = (detail.lessons || []).filter((lesson) => matchesStatuses(lessonStatusKeys(lesson, needTutor)));
       const rows = lessons.length
-        ? lessons.map((lesson) => {
-          const seen = watched(lesson);
-          const work = workState(lesson, needTutor);
-          const edge = work ? work.kind : (seen ? "watched" : "unwatched");
-          const chips = [
-            `<span class="chip ${seen ? "watched" : "unwatched"}">${seen ? "Просмотрено" : "Не просмотрено"}</span>`,
-          ];
-          if (work) chips.push(`<span class="chip ${work.kind}">${esc(work.label)}</span>`);
-          const ratio = testPercent(lesson.test);
-          const testScore = lesson.test && ratio !== null
-            ? `${lesson.test.completed ?? 0} из ${lesson.test.total ?? 0}`
-            : "";
-          const test = lesson.test && ratio !== null
-            ? `<div class="test"><span>${esc(testScore)}</span><div class="bar" role="img" aria-label="Тест выполнен на ${ratio} процентов"><i style="width:${ratio}%"></i></div><b>${ratio}%</b></div>`
-            : "";
-          const kind = [lesson.type === "text" ? "текст" : lesson.record ? "запись" : "", lesson.webinar ? "вебинар" : ""]
-            .filter(Boolean).join(" · ");
-          return `<article class="lesson ${edge}">
-            <div class="lesson-top">
-              <h3>${esc(lesson.name)}</h3>
-              <div class="chips">${chips.join("")}</div>
-            </div>
-            ${kind ? `<p class="kind">${esc(kind)}</p>` : ""}
-            <div class="links">${lessonLinks(detail.course.id, lesson, needTutor)}</div>
-            ${test}
-          </article>`;
-        }).join("")
+        ? lessons.map((lesson) => lessonCard(detail.course.id, lesson, needTutor)).join("")
         : `<p class="message">${(detail.lessons || []).length && selectedStatuses.size ? "Нет уроков с выбранными статусами." : "Уроков в курсе нет."}</p>`;
-
       lessonsEl.innerHTML = `<h2>${esc(detail.course.courseName)}</h2>${rows}`;
+    }
+
+    function renderAllLessons() {
+      if (openCourseId) return;
+      const scroll = lessonsEl.scrollTop;
+      if (!selectedStatuses.size) {
+        lessonsEl.innerHTML = `<p class="message">Выберите курс слева или включите статус, чтобы увидеть уроки по всем курсам.</p>`;
+        return;
+      }
+      const pending = courses.some((course) => !course.detail);
+      const blocks = courses.flatMap((course) => {
+        if (!course.detail) return [];
+        const needTutor = course.detail.course.needTutor;
+        const lessons = (course.detail.lessons || []).filter((lesson) => matchesStatuses(lessonStatusKeys(lesson, needTutor)));
+        if (!lessons.length) return [];
+        const rows = lessons.map((lesson) => lessonCard(course.id, lesson, needTutor)).join("");
+        return [`<section class="course-lessons"><h2>${esc(course.courseName)}</h2>${rows}</section>`];
+      });
+      if (!blocks.length) {
+        lessonsEl.innerHTML = `<p class="message">${pending ? "Загрузка уроков" : "Нет уроков с выбранными статусами."}</p>`;
+        return;
+      }
+      lessonsEl.innerHTML = blocks.join("") + (pending ? `<p class="message">Загрузка остальных курсов</p>` : "");
+      lessonsEl.scrollTop = scroll;
     }
 
     let enrichToken = 0;
@@ -581,6 +608,7 @@
       const match = testStat?.subTitle?.match(/(\d+)\s*%/);
       course.testAverage = match ? Number(match[1]) : null;
       course.lessonKeys = lessons.map((lesson) => lessonStatusKeys(lesson, course.needTutor));
+      course.detail = detail;
     }
 
     function paintCourseFacts(course) {
@@ -602,25 +630,40 @@
           applyCourseDetail(course, detail);
           paintCourseFacts(course);
           if (selectedStatuses.size) renderCourses();
+          if (!openCourseId) renderAllLessons();
         } catch {
           /* строка вебинаров остаётся «…», пока запрос не удастся при следующем открытии */
         }
       });
     }
 
+    function showCourse(course) {
+      openCourseId = course.id;
+      openDetail = course.detail;
+      renderCourses();
+      renderLessons(course.detail);
+    }
+
     async function openCourse(courseId) {
+      const course = courses.find((item) => item.id === courseId);
+      if (course?.detail) {
+        showCourse(course);
+        return;
+      }
       openCourseId = courseId;
       renderCourses();
       lessonsEl.innerHTML = `<p class="message">Загрузка уроков</p>`;
       try {
         const detail = await api(`/journal/${studentId}/detail/${courseId}`);
-        openDetail = detail;
-        const course = courses.find((item) => item.id === courseId);
-        if (course) {
-          applyCourseDetail(course, detail);
-          paintCourseFacts(course);
+        const loaded = courses.find((item) => item.id === courseId);
+        if (loaded) {
+          applyCourseDetail(loaded, detail);
+          paintCourseFacts(loaded);
+          showCourse(loaded);
+        } else {
+          openDetail = detail;
+          renderLessons(detail);
         }
-        renderLessons(detail);
       } catch (error) {
         lessonsEl.innerHTML = `<p class="message">${esc(error.message)}</p>`;
       }
@@ -648,12 +691,12 @@
           || a.courseName.localeCompare(b.courseName, "ru")
         );
       enrichCourses();
+      renderCourses();
       if (!courses.length) {
-        renderCourses();
         lessonsEl.innerHTML = `<p class="message">В этом списке курсов нет.</p>`;
         return;
       }
-      await openCourse(courses[0].id);
+      renderAllLessons();
     }
 
     document.querySelector(".filters").addEventListener("click", async (event) => {
@@ -675,16 +718,8 @@
       button.setAttribute("aria-pressed", String(selectedStatuses.has(kind)));
       legendEl.classList.toggle("filtering", selectedStatuses.size > 0);
       renderCourses();
-      const current = courses.find((course) => course.id === openCourseId);
-      if (!current || !courseVisible(current)) {
-        const next = courses.find(courseVisible);
-        if (next) {
-          openCourse(next.id);
-          return;
-        }
-        openCourseId = null;
-        openDetail = null;
-        lessonsEl.innerHTML = `<p class="message">Нет уроков с выбранными статусами.</p>`;
+      if (!openCourseId) {
+        renderAllLessons();
         return;
       }
       if (openDetail) renderLessons(openDetail);
@@ -694,7 +729,13 @@
       const button = event.target.closest(".course");
       if (!button) return;
       const courseId = Number(button.dataset.id);
-      if (courseId === openCourseId) return;
+      if (courseId === openCourseId) {
+        openCourseId = null;
+        openDetail = null;
+        renderCourses();
+        renderAllLessons();
+        return;
+      }
       try {
         await openCourse(courseId);
       } catch (error) {
