@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Успеваемость</title>
+  <style>
+    :root {
+      --bg: #f3efe6;
+      --ink: #1f1a14;
+      --muted: #6d655c;
+      --line: #e3dacd;
+      --card: #fffcf7;
+      --watched: #1f7a4d;
+      --watched-bg: #e5f4ec;
+      --unwatched: #6e675f;
+      --unwatched-bg: #ece7df;
+      --todo: #a33b2b;
+      --todo-bg: #fde8e4;
+      --sent: #1d5c99;
+      --sent-bg: #e5f0fa;
+      --fix: #a15c07;
+      --fix-bg: #fbf0dc;
+      --done: #0f6b62;
+      --done-bg: #e3f4f1;
+      --self: #5b4b8a;
+      --self-bg: #efeaf8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      line-height: 1.4;
+    }
+
+    .shell {
+      width: min(76rem, calc(100% - 2rem));
+      height: 100vh;
+      margin: 0 auto;
+      padding: 1.1rem 0 1rem;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .top {
+      display: flex;
+      justify-content: space-between;
+      gap: 1.5rem;
+      align-items: flex-end;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0.2rem 0 0;
+      font-family: Georgia, "Palatino Linotype", serif;
+      font-size: clamp(1.7rem, 3vw, 2.2rem);
+      font-weight: 500;
+    }
+
+    .filters { display: flex; gap: 0.45rem; }
+
+    .filters button {
+      min-height: 2.5rem;
+      padding: 0.35rem 0.85rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .filters button[aria-pressed="true"] {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: var(--bg);
+    }
+
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.85rem 1.6rem;
+      margin: 0.9rem 0 0.75rem;
+    }
+
+    .stat b {
+      display: block;
+      font-family: Georgia, "Palatino Linotype", serif;
+      font-size: 1.35rem;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat span { color: var(--muted); font-size: 0.8rem; }
+    .stat.warn b { color: var(--fix); }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.45rem;
+      margin: 0 0 0.75rem;
+      padding: 0;
+      list-style: none;
+    }
+
+    .legend button,
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      background: var(--chip, var(--unwatched-bg));
+      color: var(--ink);
+      font-size: 0.75rem;
+    }
+
+    .legend button {
+      border: 0;
+      font: inherit;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+
+    .legend button[aria-pressed="true"] {
+      box-shadow: inset 0 0 0 1.5px var(--dot, var(--ink));
+    }
+
+    .legend.filtering button:not([aria-pressed="true"]) { opacity: 0.4; }
+
+    .legend button::before,
+    .chip::before {
+      content: "";
+      width: 0.45rem;
+      height: 0.45rem;
+      margin-right: 0.35rem;
+      border-radius: 50%;
+      background: var(--dot, var(--unwatched));
+    }
+
+    .watched { --chip: var(--watched-bg); --dot: var(--watched); }
+    .unwatched { --chip: var(--unwatched-bg); --dot: var(--unwatched); }
+    .todo { --chip: var(--todo-bg); --dot: var(--todo); }
+    .sent { --chip: var(--sent-bg); --dot: var(--sent); }
+    .fix { --chip: var(--fix-bg); --dot: var(--fix); }
+    .done { --chip: var(--done-bg); --dot: var(--done); }
+    .self { --chip: var(--self-bg); --dot: var(--self); }
+
+    .workspace {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+      gap: 1rem;
+    }
+
+    .courses,
+    .detail {
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .course {
+      display: block;
+      width: 100%;
+      margin: 0 0 0.5rem;
+      padding: 0.75rem 0.85rem 0.7rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--card);
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .course[aria-current="true"] { border-color: var(--ink); }
+
+    .course-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      align-items: baseline;
+    }
+
+    .course h2 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+
+    .fraction {
+      flex: none;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      font-size: 0.85rem;
+    }
+
+    .meta {
+      margin: 0.3rem 0 0;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .course-stats {
+      list-style: none;
+      margin: 0.4rem 0 0.5rem;
+      padding: 0;
+      display: grid;
+      gap: 0.12rem;
+    }
+
+    .course-stats li {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.6rem;
+      align-items: baseline;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .course-stats .value {
+      color: var(--ink);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+
+    .course-stats .extra { margin-left: 0.35rem; font-weight: 600; }
+    .course-stats .need { color: var(--fix); }
+
+    .bar {
+      height: 4px;
+      border-radius: 99px;
+      background: var(--line);
+      overflow: hidden;
+    }
+
+    .bar i {
+      display: block;
+      height: 100%;
+      background: var(--ink);
+    }
+
+    .detail h2 {
+      margin: 0 0 0.8rem;
+      font-family: Georgia, "Palatino Linotype", serif;
+      font-size: 1.45rem;
+      font-weight: 500;
+    }
+
+    .lesson {
+      margin: 0 0 0.65rem;
+      padding: 0.8rem 0.9rem;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--edge, var(--line));
+      border-radius: 12px;
+      background: var(--card);
+    }
+
+    .lesson.todo { --edge: var(--todo); }
+    .lesson.sent { --edge: var(--sent); }
+    .lesson.fix { --edge: var(--fix); }
+    .lesson.done { --edge: var(--done); }
+    .lesson.self { --edge: var(--self); }
+    .lesson.unwatched { --edge: var(--unwatched); }
+    .lesson.watched { --edge: var(--watched); }
+
+    .lesson h3 { margin: 0; font-size: 0.98rem; font-weight: 600; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.45rem; }
+
+    .kind { margin: 0.25rem 0 0.55rem; color: var(--muted); font-size: 0.8rem; }
+
+    .links { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+    .links a {
+      color: var(--ink);
+      font-size: 0.85rem;
+      text-underline-offset: 0.15rem;
+    }
+
+    .test {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+      margin-top: 0.65rem;
+      font-size: 0.85rem;
+    }
+
+    .test b { font-variant-numeric: tabular-nums; }
+
+    .message { color: var(--muted); }
+
+    @media (max-width: 860px) {
+      .shell { height: auto; }
+      .top { flex-direction: column; align-items: flex-start; }
+      .workspace { grid-template-columns: 1fr; }
+      .courses, .detail { overflow: visible; }
+      .stats { gap: 0.75rem 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="top">
+        <div>
+          <p class="eyebrow">Успеваемость</p>
+          <h1 id="name">Загрузка</h1>
+        </div>
+        <div class="filters" role="group" aria-label="Статус курсов">
+          <button type="button" data-status="active" aria-pressed="true">Активные</button>
+          <button type="button" data-status="allfinished" aria-pressed="false">Завершённые</button>
+        </div>
+      </div>
+      <section class="stats" id="stats" aria-live="polite"></section>
+      <div class="legend" id="legend" role="group" aria-label="Фильтр по статусам">
+        <button type="button" class="watched" data-kind="watched" aria-pressed="false">Просмотрено</button>
+        <button type="button" class="unwatched" data-kind="unwatched" aria-pressed="false">Не просмотрено</button>
+        <button type="button" class="todo" data-kind="todo" aria-pressed="false">Не сделано</button>
+        <button type="button" class="sent" data-kind="sent" aria-pressed="false">Отправлено</button>
+        <button type="button" class="fix" data-kind="fix" aria-pressed="false">На доработке</button>
+        <button type="button" class="done" data-kind="done" aria-pressed="false">Выполнено</button>
+        <button type="button" class="self" data-kind="self" aria-pressed="false">Самопроверка</button>
+      </div>
+    </header>
+    <div class="workspace">
+      <section class="courses" id="courses" aria-label="Курсы"></section>
+      <section class="detail" id="lessons" aria-label="Уроки">
+        <p class="message">Выберите курс слева.</p>
+      </section>
+    </div>
+  </div>
+  <script>
+    const CABINET = "https://lk.tochka-school.ru/#";
+    const WORK = {
+      accepted: ["done", "Выполнено"],
+      fix_required: ["fix", "На доработке"],
+      rejected: ["todo", "Не сделано"],
+    };
+
+    const nameEl = document.querySelector("#name");
+    const statsEl = document.querySelector("#stats");
+    const coursesEl = document.querySelector("#courses");
+    const lessonsEl = document.querySelector("#lessons");
+    const legendEl = document.querySelector("#legend");
+
+    let studentId = null;
+    let status = "active";
+    let openCourseId = null;
+    let openDetail = null;
+    let courses = [];
+    const selectedStatuses = new Set();
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[char]);
+    }
+
+    function percent(done, total) {
+      if (!total) return 0;
+      return Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+    }
+
+    function countLine(count, empty) {
+      if (!count) return "…";
+      if (!count.total) return empty;
+      return `${count.completed}/${count.total}`;
+    }
+
+    function homeworkStats(course) {
+      if (course.needTutor === false) return { main: "самопроверка", extra: "" };
+      const homeworks = course.homeworks || { accepted: 0, fixRequired: 0, total: 0 };
+      if (!homeworks.total) return { main: "нет", extra: "" };
+      return {
+        main: `${homeworks.accepted}/${homeworks.total}`,
+        extra: homeworks.fixRequired ? `${homeworks.fixRequired} на доработке` : "",
+      };
+    }
+
+    async function api(path) {
+      const response = await fetch("/api" + path);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "Не удалось загрузить данные");
+      return body;
+    }
+
+    function cabinet(path) {
+      return CABINET + path;
+    }
+
+    function watched(lesson) {
+      if (lesson.type === "text") return Boolean(lesson.isTextLessonWatched || lesson.isWatched);
+      return Boolean(lesson.isWatched);
+    }
+
+    function lessonStatusKeys(lesson, needTutor) {
+      const keys = [watched(lesson) ? "watched" : "unwatched"];
+      const work = workState(lesson, needTutor);
+      if (work) keys.push(work.kind);
+      return keys;
+    }
+
+    function matchesStatuses(keys) {
+      if (!selectedStatuses.size) return true;
+      return keys.some((key) => selectedStatuses.has(key));
+    }
+
+    function courseVisible(course) {
+      if (!selectedStatuses.size || !course.lessonKeys || course.id === openCourseId) return true;
+      return course.lessonKeys.some((keys) => matchesStatuses(keys));
+    }
+
+    function workState(lesson, needTutor) {
+      if (needTutor === false) return { kind: "self", label: "Самопроверка" };
+      if (lesson.homework == null) return null;
+      const known = WORK[lesson.status];
+      if (known) return { kind: known[0], label: known[1] };
+      if (lesson.messageId) return { kind: "sent", label: "Отправлено" };
+      return null;
+    }
+
+    function testPercent(test) {
+      if (!test) return null;
+      if (typeof test.successRation === "number") return test.successRation;
+      if (test.total) return percent(test.completed, test.total);
+      return null;
+    }
+
+    function link(href, label) {
+      return `<a href="${esc(href)}" target="_blank" rel="noopener">${label}</a>`;
+    }
+
+    function chatPath(lesson) {
+      if (!lesson.chatId || lesson.messageId == null || lesson.messageId === "") return null;
+      return `/personal-chat/${lesson.chatId}?initialMessageId=${lesson.messageId}`;
+    }
+
+    function writtenLink(courseId, lesson, needTutor) {
+      const homeworkPath = `/course/${courseId}/lesson/${lesson.id}?expandHomework=true`;
+      if (needTutor === false) return link(cabinet(homeworkPath), "Самопроверка");
+      if (lesson.homework == null) return "";
+      const chat = chatPath(lesson);
+      if (lesson.status === "fix_required" && chat) {
+        return link(cabinet(chat), "РНО") + link(cabinet(homeworkPath), "Домашка");
+      }
+      if ((lesson.status === "accepted" || lesson.status === "unknown") && chat) return link(cabinet(chat), "Домашка");
+      return link(cabinet(homeworkPath), "Домашка");
+    }
+
+    function lessonLinks(courseId, lesson, needTutor) {
+      const links = [];
+      const lessonPath = `/course/${courseId}/lesson/${lesson.id}`;
+      if (lesson.record) links.push(link(cabinet(lessonPath), "Запись"));
+      if (lesson.webinar) links.push(link(cabinet(lessonPath + "/webinar-student"), "Вебинар"));
+      if (lesson.testKey) {
+        const test = lesson.test;
+        const fresh = !test || (test.score == null && test.successRation == null);
+        const path = fresh ? `/practice/${lesson.testKey}` : `/practice/${lesson.testKey}/result`;
+        links.push(link(cabinet(path), "Тест"));
+      }
+      const written = writtenLink(courseId, lesson, needTutor);
+      if (written) links.push(written);
+      return links.join("");
+    }
+
+    function renderStats(general) {
+      if (!general) {
+        statsEl.innerHTML = "";
+        return;
+      }
+      const items = [
+        ["Уроки", `${general.watches.completed}/${general.watches.total}`, false],
+        ["Вебинары", `${general.webinars.completed}/${general.webinars.total}`, false],
+        ["Сдано", `${general.homeworks.accepted}/${general.homeworks.total}`, false],
+        ["Доработка", String(general.homeworks.fixRequired), general.homeworks.fixRequired > 0],
+      ];
+      statsEl.innerHTML = items.map(([label, value, warn]) =>
+        `<div class="stat${warn ? " warn" : ""}"><b>${esc(value)}</b><span>${esc(label)}</span></div>`
+      ).join("");
+    }
+
+    function renderCourses() {
+      if (!courses.length) {
+        coursesEl.innerHTML = `<p class="message">В этом списке курсов нет.</p>`;
+        return;
+      }
+      const scroll = coursesEl.scrollTop;
+      const visible = courses.filter(courseVisible);
+      if (!visible.length) {
+        coursesEl.innerHTML = `<p class="message">Нет курсов с выбранными статусами.</p>`;
+        return;
+      }
+      coursesEl.innerHTML = visible.map((course) => {
+        const watches = course.watches || { completed: 0, total: 0 };
+        const homework = homeworkStats(course);
+        const teacher = course.teacher;
+        const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : "";
+        const current = openCourseId === course.id ? ' aria-current="true"' : "";
+        const testAverage = course.testAverage == null ? "" : `<span class="extra">· ${course.testAverage}%</span>`;
+        const homeworkExtra = homework.extra ? `<span class="extra need">· ${esc(homework.extra)}</span>` : "";
+        return `<button class="course" type="button" data-id="${course.id}"${current}>
+          <div class="course-top">
+            <h2>${esc(course.courseName)}</h2>
+            <span class="fraction">${watches.completed}/${watches.total}</span>
+          </div>
+          ${teacherName ? `<p class="meta">${esc(teacherName)}</p>` : ""}
+          <ul class="course-stats">
+            <li><span>Вебинары</span><span class="value" data-webinars="${course.id}">${esc(countLine(course.webinars, "нет"))}</span></li>
+            <li><span>Тесты</span><span class="value" data-tests="${course.id}">${esc(countLine(course.test, "нет"))}${testAverage}</span></li>
+            <li><span>Домашка</span><span class="value">${esc(homework.main)}${homeworkExtra}</span></li>
+          </ul>
+          <div class="bar" role="img" aria-label="Просмотрено ${watches.completed} из ${watches.total}">
+            <i style="width:${percent(watches.completed, watches.total)}%"></i>
+          </div>
+        </button>`;
+      }).join("");
+      coursesEl.scrollTop = scroll;
+    }
+
+    function renderLessons(detail) {
+      const needTutor = detail.course.needTutor;
+      const lessons = (detail.lessons || []).filter((lesson) => matchesStatuses(lessonStatusKeys(lesson, needTutor)));
+      const rows = lessons.length
+        ? lessons.map((lesson) => {
+          const seen = watched(lesson);
+          const work = workState(lesson, needTutor);
+          const edge = work ? work.kind : (seen ? "watched" : "unwatched");
+          const chips = [
+            `<span class="chip ${seen ? "watched" : "unwatched"}">${seen ? "Просмотрено" : "Не просмотрено"}</span>`,
+          ];
+          if (work) chips.push(`<span class="chip ${work.kind}">${esc(work.label)}</span>`);
+          const ratio = testPercent(lesson.test);
+          const testScore = lesson.test && ratio !== null
+            ? `${lesson.test.completed ?? 0} из ${lesson.test.total ?? 0}`
+            : "";
+          const test = lesson.test && ratio !== null
+            ? `<div class="test"><span>${esc(testScore)}</span><div class="bar" role="img" aria-label="Тест выполнен на ${ratio} процентов"><i style="width:${ratio}%"></i></div><b>${ratio}%</b></div>`
+            : "";
+          const kind = [lesson.type === "text" ? "текст" : lesson.record ? "запись" : "", lesson.webinar ? "вебинар" : ""]
+            .filter(Boolean).join(" · ");
+          return `<article class="lesson ${edge}">
+            <div class="lesson-top">
+              <h3>${esc(lesson.name)}</h3>
+              <div class="chips">${chips.join("")}</div>
+            </div>
+            ${kind ? `<p class="kind">${esc(kind)}</p>` : ""}
+            <div class="links">${lessonLinks(detail.course.id, lesson, needTutor)}</div>
+            ${test}
+          </article>`;
+        }).join("")
+        : `<p class="message">${(detail.lessons || []).length && selectedStatuses.size ? "Нет уроков с выбранными статусами." : "Уроков в курсе нет."}</p>`;
+
+      lessonsEl.innerHTML = `<h2>${esc(detail.course.courseName)}</h2>${rows}`;
+    }
+
+    let enrichToken = 0;
+
+    function applyCourseDetail(course, detail) {
+      const lessons = detail.lessons || [];
+      const webinars = lessons.filter((lesson) => lesson.webinar);
+      course.webinars = {
+        completed: webinars.filter((lesson) => lesson.isWatched).length,
+        total: webinars.length,
+      };
+      const testStat = (detail.course?.generalStats || []).find((item) => item.type === "test");
+      const match = testStat?.subTitle?.match(/(\d+)\s*%/);
+      course.testAverage = match ? Number(match[1]) : null;
+      course.lessonKeys = lessons.map((lesson) => lessonStatusKeys(lesson, course.needTutor));
+    }
+
+    function paintCourseFacts(course) {
+      const webinars = coursesEl.querySelector(`[data-webinars="${course.id}"]`);
+      if (webinars) webinars.textContent = countLine(course.webinars, "нет");
+      const tests = coursesEl.querySelector(`[data-tests="${course.id}"]`);
+      if (!tests) return;
+      const average = course.testAverage == null ? "" : `<span class="extra">· ${course.testAverage}%</span>`;
+      tests.innerHTML = `${esc(countLine(course.test, "нет"))}${average}`;
+    }
+
+    function enrichCourses() {
+      const token = ++enrichToken;
+      const pending = courses.slice();
+      pending.forEach(async (course) => {
+        try {
+          const detail = await api(`/journal/${studentId}/detail/${course.id}`);
+          if (token !== enrichToken) return;
+          applyCourseDetail(course, detail);
+          paintCourseFacts(course);
+          if (selectedStatuses.size) renderCourses();
+        } catch {
+          /* строка вебинаров остаётся «…», пока запрос не удастся при следующем открытии */
+        }
+      });
+    }
+
+    async function openCourse(courseId) {
+      openCourseId = courseId;
+      renderCourses();
+      lessonsEl.innerHTML = `<p class="message">Загрузка уроков</p>`;
+      try {
+        const detail = await api(`/journal/${studentId}/detail/${courseId}`);
+        openDetail = detail;
+        const course = courses.find((item) => item.id === courseId);
+        if (course) {
+          applyCourseDetail(course, detail);
+          paintCourseFacts(course);
+        }
+        renderLessons(detail);
+      } catch (error) {
+        lessonsEl.innerHTML = `<p class="message">${esc(error.message)}</p>`;
+      }
+    }
+
+    async function load(nextStatus) {
+      status = nextStatus;
+      openCourseId = null;
+      openDetail = null;
+      document.querySelectorAll(".filters button").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.status === status));
+      });
+      const journal = await api(`/journal/${studentId}/${status}`);
+      const student = journal.student;
+      nameEl.textContent = student ? `${student.firstName} ${student.lastName}` : "Успеваемость";
+      renderStats(journal.general);
+      const rich = new Map((journal.stats?.courses || []).map((course) => [course.id, course]));
+      courses = [...(journal.courses || [])]
+        .map((course) => {
+          const full = rich.get(course.id);
+          return { ...course, teacher: full?.teacher, test: full?.test ?? course.test ?? null };
+        })
+        .sort((a, b) =>
+          (b.homeworks?.fixRequired || 0) - (a.homeworks?.fixRequired || 0)
+          || a.courseName.localeCompare(b.courseName, "ru")
+        );
+      enrichCourses();
+      if (!courses.length) {
+        renderCourses();
+        lessonsEl.innerHTML = `<p class="message">В этом списке курсов нет.</p>`;
+        return;
+      }
+      await openCourse(courses[0].id);
+    }
+
+    document.querySelector(".filters").addEventListener("click", async (event) => {
+      const button = event.target.closest("button");
+      if (!button || button.dataset.status === status) return;
+      try {
+        await load(button.dataset.status);
+      } catch (error) {
+        coursesEl.innerHTML = `<p class="message">${esc(error.message)}</p>`;
+      }
+    });
+
+    legendEl.addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      const kind = button.dataset.kind;
+      if (selectedStatuses.has(kind)) selectedStatuses.delete(kind);
+      else selectedStatuses.add(kind);
+      button.setAttribute("aria-pressed", String(selectedStatuses.has(kind)));
+      legendEl.classList.toggle("filtering", selectedStatuses.size > 0);
+      renderCourses();
+      const current = courses.find((course) => course.id === openCourseId);
+      if (!current || !courseVisible(current)) {
+        const next = courses.find(courseVisible);
+        if (next) {
+          openCourse(next.id);
+          return;
+        }
+        openCourseId = null;
+        openDetail = null;
+        lessonsEl.innerHTML = `<p class="message">Нет уроков с выбранными статусами.</p>`;
+        return;
+      }
+      if (openDetail) renderLessons(openDetail);
+    });
+
+    coursesEl.addEventListener("click", async (event) => {
+      const button = event.target.closest(".course");
+      if (!button) return;
+      const courseId = Number(button.dataset.id);
+      if (courseId === openCourseId) return;
+      try {
+        await openCourse(courseId);
+      } catch (error) {
+        lessonsEl.innerHTML = `<p class="message">${esc(error.message)}</p>`;
+      }
+    });
+
+    api("/profile")
+      .then((profile) => {
+        studentId = profile.client.id;
+        nameEl.textContent = `${profile.client.firstName} ${profile.client.lastName}`;
+        return load("active");
+      })
+      .catch((error) => {
+        nameEl.textContent = "Успеваемость";
+        coursesEl.innerHTML = `<p class="message">${esc(error.message)}</p>`;
+      });
+  </script>
+</body>
+</html>
