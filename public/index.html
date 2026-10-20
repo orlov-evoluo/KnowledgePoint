@@ -88,6 +88,48 @@
       color: var(--bg);
     }
 
+    .token-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      align-items: center;
+      margin: 0.85rem 0 0;
+    }
+
+    .token-form label {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .token-form input {
+      flex: 1 1 16rem;
+      min-height: 2.5rem;
+      padding: 0.35rem 0.75rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--card);
+      color: inherit;
+      font: inherit;
+    }
+
+    .token-form button {
+      min-height: 2.5rem;
+      padding: 0.35rem 0.85rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--ink);
+      color: var(--bg);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .token-form button.quiet {
+      background: transparent;
+      color: var(--ink);
+    }
+
+    .token-note { color: var(--muted); font-size: 0.8rem; }
+
     .stats {
       display: flex;
       flex-wrap: wrap;
@@ -324,6 +366,13 @@
           <button type="button" data-status="allfinished" aria-pressed="false">Завершённые</button>
         </div>
       </div>
+      <form id="token-form" class="token-form">
+        <label for="token">Токен</label>
+        <input id="token" name="token" type="password" autocomplete="off" spellcheck="false" placeholder="Вставьте токен кабинета">
+        <button type="submit">Сохранить</button>
+        <button type="button" id="token-forget" class="quiet" hidden>Забыть</button>
+        <span id="token-note" class="token-note"></span>
+      </form>
       <section class="stats" id="stats" aria-live="polite"></section>
       <div class="legend" id="legend" role="group" aria-label="Фильтр по статусам">
         <button type="button" class="watched" data-kind="watched" aria-pressed="false">Просмотрено</button>
@@ -355,6 +404,10 @@
     const coursesEl = document.querySelector("#courses");
     const lessonsEl = document.querySelector("#lessons");
     const legendEl = document.querySelector("#legend");
+    const tokenForm = document.querySelector("#token-form");
+    const tokenInput = document.querySelector("#token");
+    const tokenNote = document.querySelector("#token-note");
+    const tokenForget = document.querySelector("#token-forget");
 
     let studentId = null;
     let status = "active";
@@ -397,6 +450,7 @@
     async function api(path) {
       const response = await fetch("/api" + path);
       const body = await response.json().catch(() => ({}));
+      if (response.status === 401) throw new Error("Кабинет отклонил токен");
       if (!response.ok) throw new Error(body.error || "Не удалось загрузить данные");
       return body;
     }
@@ -743,16 +797,63 @@
       }
     });
 
-    api("/profile")
-      .then((profile) => {
-        studentId = profile.client.id;
-        nameEl.textContent = `${profile.client.firstName} ${profile.client.lastName}`;
-        return load("active");
-      })
-      .catch((error) => {
+    function paintSession(session) {
+      tokenForget.hidden = !session.stored;
+      if (session.stored) tokenNote.textContent = "Токен сохранён локально";
+      else if (session.ready) tokenNote.textContent = "Сейчас используется токен из окружения";
+      else tokenNote.textContent = "Сохраните токен, чтобы открыть журнал";
+    }
+
+    async function boot() {
+      const session = await fetch("/api/session").then((response) => response.json());
+      paintSession(session);
+      if (!session.ready) {
         nameEl.textContent = "Успеваемость";
+        coursesEl.innerHTML = `<p class="message">Сохраните токен кабинета, чтобы загрузить журнал.</p>`;
+        lessonsEl.innerHTML = "";
+        return;
+      }
+      const profile = await api("/profile");
+      studentId = profile.client.id;
+      nameEl.textContent = `${profile.client.firstName} ${profile.client.lastName}`;
+      await load("active");
+    }
+
+    tokenForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const token = tokenInput.value.trim();
+      tokenNote.textContent = "Сохранение";
+      try {
+        const response = await fetch("/api/session", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error || "Не удалось сохранить токен");
+        tokenInput.value = "";
+        paintSession(body);
+        await boot();
+      } catch (error) {
+        tokenNote.textContent = error.message;
         coursesEl.innerHTML = `<p class="message">${esc(error.message)}</p>`;
-      });
+      }
+    });
+
+    tokenForget.addEventListener("click", async () => {
+      await fetch("/api/session", { method: "DELETE" });
+      studentId = null;
+      openCourseId = null;
+      openDetail = null;
+      courses = [];
+      statsEl.innerHTML = "";
+      await boot();
+    });
+
+    boot().catch((error) => {
+      nameEl.textContent = "Успеваемость";
+      coursesEl.innerHTML = `<p class="message">${esc(error.message)}</p>`;
+    });
   </script>
 </body>
 </html>
