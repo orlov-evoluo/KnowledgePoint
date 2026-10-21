@@ -1,4 +1,6 @@
-node_modules/
+target/
+build/
+.gradle/
 .data/
 .env
 .env.*

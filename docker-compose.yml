@@ -1,0 +1,12 @@
+services:
+  knowledge-point:
+    build: .
+    ports:
+      - "4173:4173"
+    environment:
+      PORT: "4173"
+      DATA_DIR: /data
+      PAGE: /app/public/index.html
+    volumes:
+      - ./.data:/data
+      - ./public:/app/public:ro
