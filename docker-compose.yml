@@ -1,6 +1,7 @@
 services:
   knowledge-point:
     build: .
+    restart: unless-stopped
     ports:
       - "4173:4173"
     environment:
