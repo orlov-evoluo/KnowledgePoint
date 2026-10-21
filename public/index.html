@@ -69,6 +69,19 @@
       font-weight: 500;
     }
 
+    .top-links { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+
+    .nav {
+      min-height: 2.5rem;
+      padding: 0.35rem 0.85rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--ink);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+    }
+
     .filters { display: flex; gap: 0.45rem; }
 
     .filters button {
@@ -361,9 +374,13 @@
           <p class="eyebrow">Успеваемость</p>
           <h1 id="name">Загрузка</h1>
         </div>
-        <div class="filters" role="group" aria-label="Статус курсов">
-          <button type="button" data-status="active" aria-pressed="true">Активные</button>
-          <button type="button" data-status="allfinished" aria-pressed="false">Завершённые</button>
+        <div class="top-links">
+          <a class="nav" href="/schedule">Расписание</a>
+          <a class="nav" href="/analytics">Динамика</a>
+          <div class="filters" role="group" aria-label="Статус курсов">
+            <button type="button" data-status="active" aria-pressed="true">Активные</button>
+            <button type="button" data-status="allfinished" aria-pressed="false">Завершённые</button>
+          </div>
         </div>
       </div>
       <form id="token-form" class="token-form">

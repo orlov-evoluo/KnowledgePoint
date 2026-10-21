@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Расписание</title>
+  <style>
+    :root {
+      --bg: #f3efe6;
+      --ink: #1f1a14;
+      --muted: #6d655c;
+      --line: #e3dacd;
+      --card: #fffcf7;
+      --watched: #1f7a4d;
+      --sent: #1d5c99;
+      --fix: #a15c07;
+      --self: #5b4b8a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      line-height: 1.4;
+    }
+
+    .shell {
+      width: min(76rem, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: 1.1rem 0 2rem;
+    }
+
+    .top { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0.2rem 0 0;
+      font-family: Georgia, "Palatino Linotype", serif;
+      font-size: clamp(1.7rem, 3vw, 2.2rem);
+      font-weight: 500;
+    }
+
+    .tabs { display: flex; gap: 0.45rem; flex-wrap: wrap; }
+
+    .nav, .month button {
+      min-height: 2.5rem;
+      padding: 0.35rem 0.85rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .nav.current { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+
+    .month {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-top: 1rem;
+    }
+
+    .month h2 {
+      margin: 0;
+      min-width: 12rem;
+      text-align: center;
+      font-size: 1.15rem;
+      font-weight: 600;
+    }
+
+    .note { color: var(--muted); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 0.45rem;
+      margin-top: 0.8rem;
+    }
+
+    .weekday {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-align: center;
+    }
+
+    .day {
+      min-height: 8.5rem;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 0.8rem;
+      padding: 0.4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .day.outside { background: transparent; }
+    .day.today { border-color: var(--ink); }
+
+    .day b { font-size: 0.85rem; font-weight: 600; }
+
+    .event {
+      border-left: 3px solid var(--sent);
+      padding: 0.2rem 0.35rem 0.3rem;
+      background: #f7f1e8;
+      border-radius: 0.35rem;
+    }
+
+    .event.record { border-left-color: var(--self); }
+    .event.pending { border-left-color: var(--muted); }
+
+    .event time { display: block; color: var(--muted); font-size: 0.75rem; }
+    .event strong { display: block; font-size: 0.78rem; font-weight: 600; }
+
+    .links { display: flex; flex-wrap: wrap; gap: 0.25rem 0.45rem; margin-top: 0.15rem; }
+    .links a { color: var(--sent); font-size: 0.75rem; }
+    .pending-note { color: var(--muted); font-size: 0.75rem; }
+
+    @media (max-width: 860px) {
+      .grid { min-width: 52rem; }
+      .board { overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <div>
+        <p class="eyebrow">Успеваемость</p>
+        <h1>Расписание</h1>
+      </div>
+      <nav class="tabs">
+        <a class="nav" href="/">Журнал</a>
+        <a class="nav current" href="/schedule" aria-current="page">Расписание</a>
+        <a class="nav" href="/analytics">Динамика</a>
+      </nav>
+    </header>
+    <div class="month">
+      <button type="button" id="prev" aria-label="Предыдущий месяц">←</button>
+      <h2 id="title">Загрузка</h2>
+      <button type="button" id="next" aria-label="Следующий месяц">→</button>
+    </div>
+    <p class="note" id="note"></p>
+    <div class="board">
+      <div class="grid" id="weekdays"></div>
+      <div class="grid" id="days"></div>
+    </div>
+  </div>
+  <script>
+    const CABINET = "https://lk.tochka-school.ru/#";
+    const ZONE = "Europe/Moscow";
+    const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+    const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+    const title = document.querySelector("#title");
+    const note = document.querySelector("#note");
+    const daysEl = document.querySelector("#days");
+    const weekdays = document.querySelector("#weekdays");
+    weekdays.innerHTML = WEEKDAYS.map((day) => `<div class="weekday">${day}</div>`).join("");
+
+    const today = moscowToday();
+    let cursor = { year: today.year, month: today.month };
+    let lessons = null;
+
+    function moscowToday() {
+      const parts = new Intl.DateTimeFormat("en-CA", { timeZone: ZONE, year: "numeric", month: "2-digit", day: "2-digit" })
+        .formatToParts(new Date());
+      const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return { year: Number(value.year), month: Number(value.month), day: Number(value.day), key: `${value.year}-${value.month}-${value.day}` };
+    }
+
+    function pad(value) {
+      return String(value).padStart(2, "0");
+    }
+
+    function keyOf(year, month, day) {
+      return `${year}-${pad(month)}-${pad(day)}`;
+    }
+
+    function weekday(year, month, day) {
+      return (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7;
+    }
+
+    function daysInMonth(year, month) {
+      return new Date(Date.UTC(year, month, 0)).getUTCDate();
+    }
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char]));
+    }
+
+    function moscowStamp(iso) {
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return null;
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      }).formatToParts(date);
+      const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return { key: `${value.year}-${value.month}-${value.day}`, time: `${value.hour}:${value.minute}` };
+    }
+
+    async function api(path) {
+      const response = await fetch("/api" + path);
+      const body = await response.json().catch(() => ({}));
+      if (response.status === 401) throw new Error("Кабинет отклонил токен");
+      if (!response.ok) throw new Error(body.error || "Не удалось загрузить данные");
+      return body;
+    }
+
+    function cabinet(path) {
+      return CABINET + path;
+    }
+
+    function link(href, label) {
+      return `<a href="${esc(href)}" target="_blank" rel="noopener">${label}</a>`;
+    }
+
+    function lessonPath(item) {
+      const base = `/course/${item.courseId}/lesson/${item.lessonId}`;
+      return item.parallelId == null ? base : `${base}/parallel/${item.parallelId}`;
+    }
+
+    function chatPath(lesson) {
+      if (!lesson.chatId || lesson.messageId == null || lesson.messageId === "") return null;
+      return `/personal-chat/${lesson.chatId}?initialMessageId=${lesson.messageId}`;
+    }
+
+    function eventLinks(item, known) {
+      if (!known && item.productType === "record" && item.lessonType === "record") {
+        return `<span class="pending-note">Запись появится после обработки</span>`;
+      }
+      const links = [];
+      const path = lessonPath(item);
+      if (!known) {
+        links.push(link(cabinet(path), item.lessonType === "online" ? "Вебинар" : "Урок"));
+        return `<div class="links">${links.join("")}</div>`;
+      }
+      const lesson = known.lesson;
+      if (lesson.record) links.push(link(cabinet(path), "Запись"));
+      else if (item.lessonType !== "online") links.push(link(cabinet(path), "Урок"));
+      if (lesson.webinar || item.lessonType === "online") {
+        links.push(link(cabinet(`/course/${item.courseId}/lesson/${item.lessonId}/webinar-student`), "Вебинар"));
+      }
+      if (lesson.testKey) {
+        const test = lesson.test;
+        const fresh = !test || (test.score == null && test.successRation == null);
+        links.push(link(cabinet(fresh ? `/practice/${lesson.testKey}` : `/practice/${lesson.testKey}/result`), "Тест"));
+      }
+      const homeworkPath = `${path}?expandHomework=true`;
+      if (known.needTutor === false) links.push(link(cabinet(homeworkPath), "Самопроверка"));
+      else if (lesson.homework != null) {
+        const chat = chatPath(lesson);
+        if (lesson.status === "fix_required" && chat) {
+          links.push(link(cabinet(chat), "РНО"));
+          links.push(link(cabinet(homeworkPath), "Домашка"));
+        } else if ((lesson.status === "accepted" || lesson.status === "unknown") && chat) {
+          links.push(link(cabinet(chat), "Домашка"));
+        } else {
+          links.push(link(cabinet(homeworkPath), "Домашка"));
+        }
+      }
+      return links.length ? `<div class="links">${links.join("")}</div>` : "";
+    }
+
+    async function knownLessons(schedule, bundle) {
+      const missing = [...new Set(schedule.map((item) => item.courseId))]
+        .filter((id) => bundle.courses.has(id) && !bundle.loaded.has(id));
+      await Promise.all(missing.map(async (id) => {
+        const detail = await api(`/journal/${bundle.studentId}/detail/${id}`);
+        const course = detail.course || {};
+        (detail.lessons || []).forEach((lesson) => {
+          bundle.map.set(`${id}:${lesson.id}`, { lesson, needTutor: course.needTutor });
+        });
+        bundle.loaded.add(id);
+      }));
+      return bundle.map;
+    }
+
+    function render(schedule, known) {
+      const count = daysInMonth(cursor.year, cursor.month);
+      const lead = weekday(cursor.year, cursor.month, 1);
+      const cells = [];
+      for (let index = 0; index < lead; index += 1) cells.push(`<div class="day outside"></div>`);
+      for (let day = 1; day <= count; day += 1) {
+        const key = keyOf(cursor.year, cursor.month, day);
+        const events = schedule.filter((item) => item.key === key);
+        const todayClass = key === today.key ? " today" : "";
+        const body = events.map((item) => {
+          const match = known.get(`${item.courseId}:${item.lessonId}`);
+          const kind = item.productType === "record" && item.lessonType === "record" && !match ? " pending" : item.lessonType === "record" ? " record" : "";
+          return `<article class="event${kind}"><time>${esc(item.time)}</time><strong>${esc(item.subjectName)}</strong>${eventLinks(item, match)}</article>`;
+        }).join("");
+        cells.push(`<div class="day${todayClass}"><b>${day}</b>${body}</div>`);
+      }
+      daysEl.innerHTML = cells.join("");
+      note.textContent = schedule.length ? "" : "В этом месяце занятий нет.";
+    }
+
+    async function show() {
+      title.textContent = `${MONTHS[cursor.month - 1]} ${cursor.year}`;
+      note.textContent = "Загрузка";
+      daysEl.innerHTML = "";
+      const start = keyOf(cursor.year, cursor.month, 1);
+      const end = keyOf(cursor.year, cursor.month, daysInMonth(cursor.year, cursor.month));
+      const payload = await api(`/schedule?startAt=${start}&endAt=${end}`);
+      const schedule = (payload.schedule || []).map((item) => {
+        const stamp = moscowStamp(item.startedAt);
+        return stamp ? { ...item, key: stamp.key, time: stamp.time } : null;
+      }).filter(Boolean).sort((a, b) => a.time.localeCompare(b.time));
+      if (!lessons) lessons = await prepareLessons();
+      const known = await knownLessons(schedule, lessons);
+      render(schedule, known);
+    }
+
+    async function prepareLessons() {
+      const session = await fetch("/api/session").then((response) => response.json());
+      if (!session.ready) {
+        const error = new Error("Сохраните токен кабинета на странице журнала.");
+        error.empty = true;
+        throw error;
+      }
+      const profile = await api("/profile");
+      const studentId = profile.client.id;
+      const journals = await Promise.all([
+        api(`/journal/${studentId}/active`),
+        api(`/journal/${studentId}/allfinished`),
+      ]);
+      const courses = new Map();
+      journals.forEach((journal) => (journal.courses || []).forEach((course) => courses.set(course.id, course)));
+      return { studentId, courses, loaded: new Set(), map: new Map() };
+    }
+
+    document.querySelector("#prev").addEventListener("click", () => {
+      cursor.month -= 1;
+      if (cursor.month < 1) {
+        cursor.month = 12;
+        cursor.year -= 1;
+      }
+      show().catch(fail);
+    });
+
+    document.querySelector("#next").addEventListener("click", () => {
+      cursor.month += 1;
+      if (cursor.month > 12) {
+        cursor.month = 1;
+        cursor.year += 1;
+      }
+      show().catch(fail);
+    });
+
+    function fail(error) {
+      note.textContent = error.message;
+      daysEl.innerHTML = "";
+    }
+
+    show().catch(fail);
+  </script>
+</body>
+</html>

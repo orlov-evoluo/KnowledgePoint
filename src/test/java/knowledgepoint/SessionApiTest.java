@@ -80,6 +80,9 @@ class SessionApiTest {
     mvc.perform(get("/api/secret"))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.error").value("not found"));
+
+    mvc.perform(get("/api/schedule").queryParam("startAt", "2026-10-01").queryParam("endAt", "2026-10-31"))
+        .andExpect(status().isServiceUnavailable());
   }
 
   @Test

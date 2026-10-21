@@ -22,13 +22,31 @@ public class PageController {
 
   @GetMapping("/")
   public ResponseEntity<String> index() throws IOException {
-    if (!Files.isRegularFile(page)) {
+    return html(page);
+  }
+
+  @GetMapping("/analytics")
+  public ResponseEntity<String> analytics() throws IOException {
+    return html(sibling("analytics.html"));
+  }
+
+  @GetMapping("/schedule")
+  public ResponseEntity<String> schedule() throws IOException {
+    return html(sibling("schedule.html"));
+  }
+
+  private Path sibling(String name) {
+    return page.getParent() == null ? Path.of(name) : page.getParent().resolve(name);
+  }
+
+  private static ResponseEntity<String> html(Path file) throws IOException {
+    if (!Files.isRegularFile(file)) {
       return ResponseEntity.status(500)
           .contentType(new MediaType("text", "plain", StandardCharsets.UTF_8))
           .body("page missing");
     }
     return ResponseEntity.ok()
         .contentType(new MediaType("text", "html", StandardCharsets.UTF_8))
-        .body(Files.readString(page));
+        .body(Files.readString(file));
   }
 }
