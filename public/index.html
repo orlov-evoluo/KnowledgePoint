@@ -145,8 +145,31 @@
     .stats {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.85rem 1.6rem;
+      gap: 0.85rem 2rem;
+      align-items: flex-start;
       margin: 0.9rem 0 0.75rem;
+    }
+
+    .stat-caption {
+      max-width: 36rem;
+      margin: 0 0 0.35rem;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .stat-caption.all {
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .stats-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.85rem 1.6rem;
     }
 
     .stat b {
@@ -426,6 +449,7 @@
     let status = "active";
     let openCourseId = null;
     let openDetail = null;
+    let general = null;
     let courses = [];
     const selectedStatuses = new Set();
 
@@ -455,8 +479,48 @@
       const homeworks = course.homeworks || { accepted: 0, fixRequired: 0, total: 0 };
       if (!homeworks.total) return { main: "нет", extra: "" };
       return {
-        main: `${homeworks.accepted}/${homeworks.total}`,
+        main: `${homeworks.accepted}/${homeworks.total} · ${percent(homeworks.accepted, homeworks.total)}%`,
         extra: homeworks.fixRequired ? `${homeworks.fixRequired} на доработке` : "",
+      };
+    }
+
+    function testQuantity(test) {
+      if (!test || !test.total) return null;
+      return `${test.completed}/${test.total} · ${percent(test.completed, test.total)}%`;
+    }
+
+    function testCardText(course) {
+      const quantity = testQuantity(course.test);
+      if (!quantity) return "нет";
+      if (typeof course.testQuality !== "number") return quantity;
+      return `${quantity} · качество ${course.testQuality}%`;
+    }
+
+    function overallTest() {
+      let completed = 0;
+      let total = 0;
+      let weight = 0;
+      let sum = 0;
+      let pending = false;
+      courses.forEach((course) => {
+        const test = course.test;
+        if (!test || !test.total) return;
+        completed += test.completed || 0;
+        total += test.total || 0;
+        if (!course.detail) {
+          pending = true;
+          return;
+        }
+        if (typeof course.testQuality === "number" && test.completed) {
+          sum += course.testQuality * test.completed;
+          weight += test.completed;
+        }
+      });
+      return {
+        completed,
+        total,
+        quality: pending || !weight ? null : Math.round(sum / weight),
+        pending,
       };
     }
 
@@ -546,20 +610,60 @@
       return links.join("");
     }
 
-    function renderStats(general) {
+    function summaryItems(model) {
+      const items = [
+        ["Уроки", model.watches && model.watches.total ? `${model.watches.completed}/${model.watches.total}` : "нет", false],
+        ["Вебинары", countLine(model.webinars, "нет"), false],
+      ];
+      const quantity = testQuantity(model.test);
+      if (!quantity) {
+        items.push(["Тесты", "нет", false]);
+      } else {
+        items.push(["Количество тестов", quantity, false]);
+        const quality = typeof model.testQuality === "number" ? `${model.testQuality}%` : (model.testPending ? "…" : "нет");
+        items.push(["Качество тестов", quality, false]);
+      }
+      if (model.needTutor === false) {
+        items.push(["Сдано", "самопроверка", false]);
+      } else {
+        const homeworks = model.homeworks || { accepted: 0, fixRequired: 0, total: 0 };
+        items.push(["Сдано", homeworks.total ? `${homeworks.accepted}/${homeworks.total} · ${percent(homeworks.accepted, homeworks.total)}%` : "нет", false]);
+        items.push(["Доработка", String(homeworks.fixRequired || 0), (homeworks.fixRequired || 0) > 0]);
+      }
+      return items;
+    }
+
+    function statRow(items) {
+      return items.map(([label, value, warn]) =>
+        `<div class="stat${warn ? " warn" : ""}"><b>${esc(value)}</b><span>${esc(label)}</span></div>`
+      ).join("");
+    }
+
+    function renderHeader() {
       if (!general) {
         statsEl.innerHTML = "";
         return;
       }
-      const items = [
-        ["Уроки", `${general.watches.completed}/${general.watches.total}`, false],
-        ["Вебинары", `${general.webinars.completed}/${general.webinars.total}`, false],
-        ["Сдано", `${general.homeworks.accepted}/${general.homeworks.total}`, false],
-        ["Доработка", String(general.homeworks.fixRequired), general.homeworks.fixRequired > 0],
-      ];
-      statsEl.innerHTML = items.map(([label, value, warn]) =>
-        `<div class="stat${warn ? " warn" : ""}"><b>${esc(value)}</b><span>${esc(label)}</span></div>`
-      ).join("");
+      const tests = overallTest();
+      const course = courses.find((item) => item.id === openCourseId);
+      const overall = `<div class="stat-group">${course ? '<p class="stat-caption all">Все курсы</p>' : ""}<div class="stats-row">${statRow(summaryItems({
+        watches: general.watches,
+        webinars: general.webinars,
+        homeworks: general.homeworks,
+        test: { completed: tests.completed, total: tests.total },
+        testQuality: tests.quality,
+        testPending: tests.pending,
+      }))}</div></div>`;
+      const selected = course ? `<div class="stat-group"><p class="stat-caption">${esc(course.courseName)}</p><div class="stats-row">${statRow(summaryItems({
+        watches: course.watches,
+        webinars: course.webinars,
+        homeworks: course.homeworks,
+        test: course.test,
+        testQuality: course.testQuality,
+        testPending: !course.detail,
+        needTutor: course.needTutor,
+      }))}</div></div>` : "";
+      statsEl.innerHTML = overall + selected;
     }
 
     function renderCourses() {
@@ -579,7 +683,6 @@
         const teacher = course.teacher;
         const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : "";
         const current = openCourseId === course.id ? ' aria-current="true"' : "";
-        const testAverage = course.testAverage == null ? "" : `<span class="extra">· ${course.testAverage}%</span>`;
         const homeworkExtra = homework.extra ? `<span class="extra need">· ${esc(homework.extra)}</span>` : "";
         return `<button class="course" type="button" data-id="${course.id}"${current}>
           <div class="course-top">
@@ -589,7 +692,7 @@
           ${teacherName ? `<p class="meta">${esc(teacherName)}</p>` : ""}
           <ul class="course-stats">
             <li><span>Вебинары</span><span class="value" data-webinars="${course.id}">${esc(countLine(course.webinars, "нет"))}</span></li>
-            <li><span>Тесты</span><span class="value" data-tests="${course.id}">${esc(countLine(course.test, "нет"))}${testAverage}</span></li>
+            <li><span>Тесты</span><span class="value" data-tests="${course.id}">${esc(testCardText(course))}</span></li>
             <li><span>Домашка</span><span class="value">${esc(homework.main)}${homeworkExtra}</span></li>
           </ul>
           <div class="bar" role="img" aria-label="Просмотрено ${watches.completed} из ${watches.total}">
@@ -672,9 +775,10 @@
       };
       const testStat = (detail.course?.generalStats || []).find((item) => item.type === "test");
       const match = testStat?.subTitle?.match(/(\d+)\s*%/);
-      course.testAverage = match ? Number(match[1]) : null;
+      course.testQuality = match ? Number(match[1]) : null;
       course.lessonKeys = lessons.map((lesson) => lessonStatusKeys(lesson, course.needTutor));
       course.detail = detail;
+      renderHeader();
     }
 
     function paintCourseFacts(course) {
@@ -682,8 +786,7 @@
       if (webinars) webinars.textContent = countLine(course.webinars, "нет");
       const tests = coursesEl.querySelector(`[data-tests="${course.id}"]`);
       if (!tests) return;
-      const average = course.testAverage == null ? "" : `<span class="extra">· ${course.testAverage}%</span>`;
-      tests.innerHTML = `${esc(countLine(course.test, "нет"))}${average}`;
+      tests.textContent = testCardText(course);
     }
 
     function enrichCourses() {
@@ -706,6 +809,7 @@
     function showCourse(course) {
       openCourseId = course.id;
       openDetail = course.detail;
+      renderHeader();
       renderCourses();
       renderLessons(course.detail);
     }
@@ -717,6 +821,7 @@
         return;
       }
       openCourseId = courseId;
+      renderHeader();
       renderCourses();
       lessonsEl.innerHTML = `<p class="message">Загрузка уроков</p>`;
       try {
@@ -745,7 +850,7 @@
       const journal = await api(`/journal/${studentId}/${status}`);
       const student = journal.student;
       nameEl.textContent = student ? `${student.firstName} ${student.lastName}` : "Успеваемость";
-      renderStats(journal.general);
+      general = journal.general;
       const rich = new Map((journal.stats?.courses || []).map((course) => [course.id, course]));
       courses = [...(journal.courses || [])]
         .map((course) => {
@@ -757,6 +862,7 @@
           || a.courseName.localeCompare(b.courseName, "ru")
         );
       enrichCourses();
+      renderHeader();
       renderCourses();
       if (!courses.length) {
         lessonsEl.innerHTML = `<p class="message">В этом списке курсов нет.</p>`;
@@ -798,6 +904,7 @@
       if (courseId === openCourseId) {
         openCourseId = null;
         openDetail = null;
+        renderHeader();
         renderCourses();
         renderAllLessons();
         return;
@@ -829,7 +936,8 @@
       studentId = profile.client.id;
       nameEl.textContent = `${profile.client.firstName} ${profile.client.lastName}`;
       const params = new URLSearchParams(location.search);
-      const courseId = Number(params.get("course"));
+      const rawCourse = params.get("course");
+      const courseId = rawCourse ? Number(rawCourse) : NaN;
       const preferred = params.get("list") === "allfinished" ? "allfinished" : "active";
       await load(Number.isFinite(courseId) ? preferred : "active");
       if (!Number.isFinite(courseId)) return;
@@ -867,6 +975,7 @@
       studentId = null;
       openCourseId = null;
       openDetail = null;
+      general = null;
       courses = [];
       statsEl.innerHTML = "";
       await boot();
