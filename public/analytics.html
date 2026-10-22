@@ -52,22 +52,37 @@
       font-weight: 500;
     }
 
-    .tabs { display: flex; gap: 0.45rem; flex-wrap: wrap; }
+    .tabs, .panel { display: flex; gap: 0.45rem; flex-wrap: wrap; align-items: center; }
 
-    .nav {
+    .nav, .pill {
       min-height: 2.5rem;
       padding: 0.35rem 0.85rem;
       border: 1px solid var(--line);
       border-radius: 999px;
       color: var(--ink);
+      background: transparent;
       text-decoration: none;
       display: inline-flex;
       align-items: center;
+      font: inherit;
+      cursor: pointer;
     }
 
-    .nav.current { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+    .nav.current, .pill[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 
-    .note { color: var(--muted); margin: 1rem 0 0; }
+    button.nav:disabled { opacity: 0.55; cursor: default; }
+
+    .note, .hint { color: var(--muted); margin: 1rem 0 0; }
+
+    .hint { margin-top: 0.7rem; font-size: 0.9rem; }
+
+    .save-row { margin-top: 0.85rem; }
+
+    .toolbar { margin-top: 0.9rem; }
+
+    .panel { margin-top: 0.55rem; }
+
+    .label { color: var(--muted); font-size: 0.8rem; min-width: 5.2rem; }
 
     table {
       width: 100%;
@@ -89,6 +104,8 @@
 
     th { color: var(--muted); font-weight: 500; font-size: 0.85rem; }
 
+    td.name { white-space: normal; min-width: 12rem; }
+
     tr:last-child td { border-bottom: 0; }
 
     .delta { margin-left: 0.35rem; color: var(--muted); font-size: 0.85rem; }
@@ -106,7 +123,7 @@
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: 1rem;
-      padding: 0.8rem 0.9rem 0.4rem;
+      padding: 0.8rem 0.9rem 0.7rem;
     }
 
     .chart h2 { margin: 0 0 0.3rem; font-size: 0.95rem; font-weight: 600; }
@@ -114,6 +131,10 @@
     svg { width: 100%; height: 7.5rem; display: block; }
 
     polyline { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 0.45rem 0.8rem; margin: 0.35rem 0 0; color: var(--muted); font-size: 0.8rem; }
+
+    .legend i { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 99px; margin-right: 0.3rem; }
 
     .wrap { overflow-x: auto; }
   </style>
@@ -131,7 +152,22 @@
         <a class="nav current" href="/analytics" aria-current="page">Динамика</a>
       </nav>
     </header>
+    <div class="save-row">
+      <button type="button" class="nav" id="save" hidden>Сохранить сегодняшний снимок</button>
+    </div>
     <p class="note" id="note">Загрузка</p>
+    <div class="toolbar" id="toolbar" hidden>
+      <div class="panel" id="scopes"></div>
+      <div class="panel" id="course-filter"><span class="label">Курсы</span><span id="course-pills"></span></div>
+      <div class="panel" id="metric-filter"><span class="label">Показатели</span><span id="metric-pills"></span></div>
+      <div class="panel" id="status-filter"><span class="label">Статусы</span><span id="status-pills"></span></div>
+      <div class="panel" id="view-filter">
+        <span class="label">Вид</span>
+        <button type="button" class="pill" data-toggle="chart">График</button>
+        <button type="button" class="pill" data-toggle="table">Таблица</button>
+      </div>
+      <p class="hint">Курсы и статусы без выбора показывают всё. Показатели и вид включаются по отдельности. Просмотры сюда не входят.</p>
+    </div>
     <div class="charts" id="charts"></div>
     <div class="wrap" id="table"></div>
   </div>
@@ -139,83 +175,530 @@
     const note = document.querySelector("#note");
     const charts = document.querySelector("#charts");
     const table = document.querySelector("#table");
-
-    const series = [
-      ["Уроки", "watches", "completed", "--watched"],
-      ["Вебинары", "webinars", "completed", "--sent"],
-      ["Сдано", "homeworks", "accepted", "--done"],
-      ["Доработка", "homeworks", "fixRequired", "--fix"],
-      ["Тесты", "tests", "completed", "--self"],
+    const toolbar = document.querySelector("#toolbar");
+    const save = document.querySelector("#save");
+    const VIEW_KEY = "knowledgepoint.analytics.view";
+    const SCOPES = [
+      ["summary", "Сводка"],
+      ["courses", "Курсы"],
+      ["tests", "Тесты"],
+      ["homeworks", "Домашки"],
+      ["revisions", "РНО"],
     ];
+    const METRICS = [
+      ["tests", "Количество тестов", "#5b4b8a"],
+      ["quality", "Качество", "#1d5c99"],
+      ["accepted", "Сдано", "#0f6b62"],
+      ["revisions", "РНО", "#a15c07"],
+    ];
+    const HOMEWORK_STATUS = [
+      ["accepted", "Выполнено", "#0f6b62"],
+      ["rejected", "Не сделано", "#8a3a3a"],
+      ["fix_required", "На доработке", "#a15c07"],
+      ["self", "Самопроверка", "#5b4b8a"],
+    ];
+    const TEST_STATUS = [
+      ["done", "Сдан"],
+      ["todo", "Не сдан"],
+    ];
+    const PALETTE = ["#1f7a4d", "#1d5c99", "#a15c07", "#0f6b62", "#5b4b8a", "#8a3a3a", "#3d6b4f", "#6d655c"];
+
+    let days = [];
+    let view = loadView();
+
+    function loadView() {
+      const fallback = { scope: "summary", courses: [], metrics: ["tests", "quality", "accepted", "revisions"], statuses: [], chart: true, table: true };
+      try {
+        const stored = JSON.parse(localStorage.getItem(VIEW_KEY) || "null");
+        if (!stored || typeof stored !== "object") return fallback;
+        const scope = SCOPES.some(([id]) => id === stored.scope) ? stored.scope : fallback.scope;
+        return {
+          scope,
+          courses: Array.isArray(stored.courses) ? stored.courses.map(Number).filter(Number.isFinite) : [],
+          metrics: Array.isArray(stored.metrics) ? stored.metrics.filter((id) => METRICS.some(([metric]) => metric === id)) : fallback.metrics,
+          statuses: Array.isArray(stored.statuses) ? stored.statuses.map(String) : [],
+          chart: stored.chart !== false,
+          table: stored.table !== false,
+        };
+      } catch {
+        return fallback;
+      }
+    }
+
+    function saveView() {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+    }
 
     function esc(value) {
-      return String(value).replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char]));
+      return String(value ?? "").replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char]));
     }
 
-    function value(day, key, field) {
-      return day[key][field];
+    function percent(done, total) {
+      if (!total) return 0;
+      return Math.max(0, Math.min(100, Math.round((done / total) * 100)));
     }
 
-    function cell(day, previous, key, field) {
-      const current = value(day, key, field);
-      const text = key === "homeworks" && field === "fixRequired"
-        ? String(current)
-        : `${value(day, key, field === "accepted" ? "accepted" : "completed")}/${day[key].total}`;
-      if (!previous) return esc(text);
-      const delta = current - value(previous, key, field);
-      if (!delta) return esc(text);
-      const sign = delta > 0 ? "up" : "down";
-      const prefix = delta > 0 ? "+" : "";
-      return `${esc(text)}<span class="delta ${sign}">${prefix}${delta}</span>`;
+    function toggle(list, value) {
+      const index = list.indexOf(value);
+      if (index >= 0) list.splice(index, 1);
+      else list.push(value);
     }
 
-    function chart(title, color, points) {
-      if (points.length < 2) return "";
+    function courseCatalog() {
+      const names = new Map();
+      days.forEach((day) => (day.breakdown?.courses || []).forEach((course) => names.set(course.id, course.name)));
+      return [...names.entries()]
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    }
+
+    function courseAllowed(id) {
+      return !view.courses.length || view.courses.includes(id);
+    }
+
+    function courseName(id) {
+      return courseCatalog().find((course) => course.id === id)?.name || "Курс";
+    }
+
+    function metricOn(id) {
+      return view.metrics.includes(id);
+    }
+
+    function statusChoices() {
+      if (view.scope === "homeworks") return HOMEWORK_STATUS;
+      if (view.scope === "tests") return TEST_STATUS;
+      return [];
+    }
+
+    function metricChoices() {
+      if (view.scope === "tests") return METRICS.filter(([id]) => id === "tests" || id === "quality");
+      if (view.scope === "summary" || view.scope === "courses") return METRICS;
+      return [];
+    }
+
+    function statusAllowed(value) {
+      const choices = statusChoices().map(([id]) => id);
+      const selected = view.statuses.filter((id) => choices.includes(id));
+      return !selected.length || selected.includes(value);
+    }
+
+    function summaryOf(day) {
+      if (!day.breakdown) {
+        if (view.courses.length) return null;
+        return {
+          testsCompleted: day.tests.completed,
+          testsTotal: day.tests.total,
+          testQuality: typeof day.testQuality === "number" ? day.testQuality : null,
+          accepted: day.homeworks.accepted,
+          homeworksTotal: day.homeworks.total,
+          revisions: day.homeworks.fixRequired,
+          selfOnly: false,
+        };
+      }
+      const courses = (day.breakdown.courses || []).filter((course) => courseAllowed(course.id));
+      if (view.courses.length && !courses.length) return null;
+      if (!view.courses.length && day.breakdown.summary) {
+        const summary = day.breakdown.summary;
+        return {
+          testsCompleted: summary.testsCompleted,
+          testsTotal: summary.testsTotal,
+          testQuality: typeof summary.testQuality === "number" ? summary.testQuality : null,
+          accepted: summary.homeworksAccepted,
+          homeworksTotal: summary.homeworksTotal,
+          revisions: summary.fixRequired,
+          selfOnly: false,
+        };
+      }
+      let testsCompleted = 0;
+      let testsTotal = 0;
+      let accepted = 0;
+      let homeworksTotal = 0;
+      let revisions = 0;
+      let weight = 0;
+      let sum = 0;
+      let pending = false;
+      let tutor = false;
+      let self = false;
+      courses.forEach((course) => {
+        testsCompleted += course.testsCompleted || 0;
+        testsTotal += course.testsTotal || 0;
+        if ((course.testsTotal || 0) > 0 && typeof course.testQuality !== "number") pending = true;
+        if (typeof course.testQuality === "number" && course.testsCompleted) {
+          sum += course.testQuality * course.testsCompleted;
+          weight += course.testsCompleted;
+        }
+        if (course.needTutor === false) {
+          self = true;
+          return;
+        }
+        tutor = true;
+        accepted += course.homeworksAccepted || 0;
+        homeworksTotal += course.homeworksTotal || 0;
+        revisions += course.fixRequired || 0;
+      });
+      return {
+        testsCompleted,
+        testsTotal,
+        testQuality: pending || !weight ? null : Math.round(sum / weight),
+        accepted: tutor ? accepted : null,
+        homeworksTotal: tutor ? homeworksTotal : null,
+        revisions,
+        selfOnly: self && !tutor,
+      };
+    }
+
+    function metricValue(summary, id) {
+      if (id === "tests") return summary.testsCompleted;
+      if (id === "quality") return summary.testQuality;
+      if (id === "accepted") return summary.accepted;
+      return summary.revisions;
+    }
+
+    function metricText(summary, id) {
+      if (id === "tests") return `${summary.testsCompleted}/${summary.testsTotal} · ${percent(summary.testsCompleted, summary.testsTotal)}%`;
+      if (id === "quality") return summary.testQuality == null ? "—" : `${summary.testQuality}%`;
+      if (id === "accepted") {
+        if (summary.selfOnly || summary.accepted == null) return "самопроверка";
+        return `${summary.accepted}/${summary.homeworksTotal} · ${percent(summary.accepted, summary.homeworksTotal)}%`;
+      }
+      return String(summary.revisions);
+    }
+
+    function delta(current, previous, badUp) {
+      if (typeof current !== "number" || typeof previous !== "number" || current === previous) return "";
+      const change = current - previous;
+      const good = badUp ? change < 0 : change > 0;
+      return `<span class="delta ${good ? "up" : "down"}">${change > 0 ? "+" : ""}${change}</span>`;
+    }
+
+    function chart(title, lines) {
+      const series = lines.filter((line) => line.values.some((value) => typeof value === "number"));
+      const numeric = series.flatMap((line) => line.values.filter((value) => typeof value === "number"));
+      const count = series[0]?.values.length || 0;
+      if (numeric.length < 2 || count < 2) return "";
       const width = 320;
       const height = 120;
       const pad = 12;
-      const min = Math.min(...points);
-      const max = Math.max(...points);
+      const min = Math.min(...numeric);
+      const max = Math.max(...numeric);
       const span = max - min || 1;
-      const coords = points.map((point, index) => {
-        const x = pad + index * (width - pad * 2) / (points.length - 1);
-        const y = height - pad - ((point - min) / span) * (height - pad * 2);
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      }).join(" ");
-      return `<section class="chart"><h2>${esc(title)}</h2><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title)}"><polyline points="${coords}" stroke="var(${color})"></polyline></svg></section>`;
+      const xs = series[0].values.map((_, index) => pad + index * (width - pad * 2) / (count - 1));
+      const yOf = (value) => height - pad - ((value - min) / span) * (height - pad * 2);
+      const paths = series.map((line) => {
+        const parts = [];
+        let current = [];
+        line.values.forEach((value, index) => {
+          if (typeof value !== "number") {
+            if (current.length > 1) parts.push(current.join(" "));
+            current = [];
+            return;
+          }
+          current.push(`${xs[index].toFixed(1)},${yOf(value).toFixed(1)}`);
+        });
+        if (current.length > 1) parts.push(current.join(" "));
+        return parts.map((points) => `<polyline points="${points}" stroke="${line.color}"></polyline>`).join("");
+      }).join("");
+      if (!paths) return "";
+      const legend = series.length > 1
+        ? `<p class="legend">${series.map((line) => `<span><i style="background:${line.color}"></i>${esc(line.label)}</span>`).join("")}</p>`
+        : "";
+      return `<section class="chart"><h2>${esc(title)}</h2><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title)}">${paths}</svg>${legend}</section>`;
     }
 
-    function render(days) {
+    function tableHtml(headers, rows) {
+      const head = headers.map((item) => `<th>${esc(item)}</th>`).join("");
+      const body = rows.map((row) => `<tr>${row.map((cell, index) => `<td${index < 2 ? ' class="name"' : ""}>${cell}</td>`).join("")}</tr>`).join("");
+      return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+
+    function collect(kind) {
+      const map = new Map();
+      days.forEach((day) => {
+        (day.breakdown?.[kind] || []).forEach((item) => {
+          if (!courseAllowed(item.courseId)) return;
+          const key = `${item.courseId}:${item.lessonId}`;
+          if (!map.has(key)) {
+            map.set(key, { courseId: item.courseId, lessonId: item.lessonId, name: item.name, courseName: courseName(item.courseId), byDay: {} });
+          }
+          map.get(key).byDay[day.day] = item;
+        });
+      });
+      return [...map.values()].sort((a, b) => a.courseName.localeCompare(b.courseName, "ru") || a.name.localeCompare(b.name, "ru"));
+    }
+
+    function latest(item, read) {
+      let found = null;
+      days.forEach((day) => {
+        if (item.byDay[day.day]) found = read(item.byDay[day.day]);
+      });
+      return found;
+    }
+
+    function detailed(day) {
+      return Boolean(day.breakdown);
+    }
+
+    function paintControls() {
+      document.querySelector("#scopes").innerHTML = SCOPES.map(([id, label]) =>
+        `<button type="button" class="pill" data-scope="${id}" aria-pressed="${view.scope === id}">${label}</button>`
+      ).join("");
+      const courses = courseCatalog();
+      document.querySelector("#course-pills").innerHTML = courses.length
+        ? courses.map((course) => `<button type="button" class="pill" data-course="${course.id}" aria-pressed="${view.courses.includes(course.id)}">${esc(course.name)}</button>`).join("")
+        : `<span class="hint">Разбивки по курсам в снимках пока нет.</span>`;
+      const metrics = metricChoices();
+      document.querySelector("#metric-filter").hidden = !metrics.length;
+      document.querySelector("#metric-pills").innerHTML = metrics.map(([id, label]) =>
+        `<button type="button" class="pill" data-metric="${id}" aria-pressed="${metricOn(id)}">${label}</button>`
+      ).join("");
+      const statuses = statusChoices();
+      document.querySelector("#status-filter").hidden = !statuses.length;
+      document.querySelector("#status-pills").innerHTML = statuses.map(([id, label]) =>
+        `<button type="button" class="pill" data-status="${id}" aria-pressed="${view.statuses.includes(id)}">${label}</button>`
+      ).join("");
+      toolbar.querySelectorAll("[data-toggle]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(Boolean(view[button.dataset.toggle])));
+      });
+    }
+
+    function summaryView() {
+      const points = days.map(summaryOf);
+      const enabled = METRICS.filter(([id]) => metricOn(id));
+      const drawn = view.chart
+        ? enabled.map(([id, label, color]) => chart(label, [{ label, color, values: points.map((item) => item ? metricValue(item, id) : null) }])).join("")
+        : "";
+      const headers = ["День", ...enabled.map(([, label]) => label)];
+      const rows = days.map((day, index) => {
+        const current = points[index];
+        if (!current) return null;
+        const previous = index ? points[index - 1] : null;
+        return [
+          esc(day.day),
+          ...enabled.map(([id]) => `${esc(metricText(current, id))}${delta(metricValue(current, id), previous ? metricValue(previous, id) : null, id === "revisions")}`),
+        ];
+      }).filter(Boolean);
+      return { drawn, headers, rows };
+    }
+
+    function courseView() {
+      const courses = courseCatalog().filter((course) => courseAllowed(course.id));
+      const enabled = METRICS.filter(([id]) => metricOn(id));
+      let drawn = "";
+      if (view.chart && courses.length > 8) {
+        drawn = `<p class="note">Выберите до 8 курсов, чтобы построить график.</p>`;
+      } else if (view.chart) {
+        drawn = enabled.map(([id, label]) => chart(label, courses.map((course, index) => ({
+          label: course.name,
+          color: PALETTE[index % PALETTE.length],
+          values: days.map((day) => {
+            const found = (day.breakdown?.courses || []).find((item) => item.id === course.id);
+            if (!found) return null;
+            if (id === "tests") return found.testsCompleted || 0;
+            if (id === "quality") return typeof found.testQuality === "number" ? found.testQuality : null;
+            if (id === "accepted") return found.needTutor === false ? null : (found.homeworksAccepted || 0);
+            return found.needTutor === false ? 0 : (found.fixRequired || 0);
+          }),
+        })))).join("");
+      }
+      const headers = ["Курс", "Показатель", ...days.map((day) => day.day)];
+      const rows = courses.flatMap((course) => enabled.map(([id, label]) => [
+        esc(course.name),
+        esc(label),
+        ...days.map((day) => {
+          const found = (day.breakdown?.courses || []).find((item) => item.id === course.id);
+          return esc(courseCell(found, id));
+        }),
+      ]));
+      return { drawn, headers, rows };
+    }
+
+    function courseCell(found, id) {
+      if (!found) return "—";
+      if (id === "tests") {
+        const completed = found.testsCompleted || 0;
+        const total = found.testsTotal || 0;
+        return `${completed}/${total} · ${percent(completed, total)}%`;
+      }
+      if (id === "quality") return typeof found.testQuality === "number" ? `${found.testQuality}%` : "—";
+      if (id === "accepted") {
+        if (found.needTutor === false) return "самопроверка";
+        const accepted = found.homeworksAccepted || 0;
+        const total = found.homeworksTotal || 0;
+        return `${accepted}/${total} · ${percent(accepted, total)}%`;
+      }
+      return String(found.needTutor === false ? 0 : (found.fixRequired || 0));
+    }
+
+    function testView() {
+      const items = collect("tests").filter((item) => statusAllowed(latest(item, (entry) => entry.done ? "done" : "todo")));
+      const drawn = [];
+      if (view.chart && metricOn("tests")) {
+        drawn.push(chart("Тесты", [{
+          label: view.statuses.length === 1 && view.statuses[0] === "todo" ? "Не сданы" : "Сданы",
+          color: "#5b4b8a",
+          values: days.map((day) => (day.breakdown?.tests || []).filter((item) => {
+            if (!courseAllowed(item.courseId)) return false;
+            const state = item.done ? "done" : "todo";
+            if (!view.statuses.length) return Boolean(item.done);
+            return statusAllowed(state);
+          }).length),
+        }]));
+      }
+      if (view.chart && metricOn("quality") && statusAllowed("done")) {
+        drawn.push(chart("Качество", [{
+          label: "Среднее сданных",
+          color: "#1d5c99",
+          values: days.map((day) => {
+            const done = (day.breakdown?.tests || []).filter((item) => courseAllowed(item.courseId) && item.done && typeof item.quality === "number");
+            if (!done.length) return null;
+            return Math.round(done.reduce((sum, item) => sum + item.quality, 0) / done.length);
+          }),
+        }]));
+      }
+      const headers = ["Курс", "Тест", ...days.map((day) => day.day)];
+      const rows = items.map((item) => [
+        esc(item.courseName),
+        esc(item.name),
+        ...days.map((day) => {
+          const entry = item.byDay[day.day];
+          if (!entry) return "—";
+          if (!entry.done) return "не сдан";
+          return typeof entry.quality === "number" ? `${entry.quality}%` : "сдан";
+        }),
+      ]);
+      return { drawn: drawn.join(""), headers, rows };
+    }
+
+    function homeworkView() {
+      const items = collect("homeworks").filter((item) => statusAllowed(latest(item, (entry) => entry.status)));
+      const statuses = HOMEWORK_STATUS.filter(([id]) => statusAllowed(id));
+      const drawn = view.chart
+        ? chart("Домашки", statuses.map(([id, label, color]) => ({
+          label,
+          color,
+          values: days.map((day) => (day.breakdown?.homeworks || []).filter((item) => courseAllowed(item.courseId) && item.status === id).length),
+        })))
+        : "";
+      const headers = ["Курс", "Домашка", ...days.map((day) => day.day)];
+      const labels = Object.fromEntries(HOMEWORK_STATUS);
+      const rows = items.map((item) => [
+        esc(item.courseName),
+        esc(item.name),
+        ...days.map((day) => {
+          const entry = item.byDay[day.day];
+          return entry ? esc(labels[entry.status] || "—") : "—";
+        }),
+      ]);
+      return { drawn, headers, rows };
+    }
+
+    function revisionView() {
+      const items = collect("revisions");
+      const drawn = view.chart
+        ? chart("РНО", [{
+          label: "На доработке",
+          color: "#a15c07",
+          values: days.map((day) => (day.breakdown?.revisions || []).filter((item) => courseAllowed(item.courseId)).length),
+        }])
+        : "";
+      const headers = ["Курс", "РНО", ...days.map((day) => day.day)];
+      const rows = items.map((item) => [
+        esc(item.courseName),
+        esc(item.name),
+        ...days.map((day) => item.byDay[day.day] ? "РНО" : "—"),
+      ]);
+      return { drawn, headers, rows };
+    }
+
+    function paint() {
+      paintControls();
       if (!days.length) {
-        note.textContent = "Снимков ещё нет. Первый сохранится сегодня в 20:59 мск, если приложение в этот момент запущено.";
+        toolbar.hidden = true;
+        charts.innerHTML = "";
+        table.innerHTML = "";
         return;
       }
-      note.textContent = "Снимок активного журнала каждый день в 20:59 мск. Рядом с цифрой — изменение к предыдущему дню.";
-      charts.innerHTML = series.map(([title, key, field, color]) => chart(title, color, days.map((day) => value(day, key, field)))).join("");
-      const head = ["День", "Уроки", "Вебинары", "Сдано", "Доработка", "Тесты"].map((item) => `<th>${item}</th>`).join("");
-      const rows = days.map((day, index) => {
-        const previous = index ? days[index - 1] : null;
-        return `<tr>
-          <td>${esc(day.day)}</td>
-          <td>${cell(day, previous, "watches", "completed")}</td>
-          <td>${cell(day, previous, "webinars", "completed")}</td>
-          <td>${cell(day, previous, "homeworks", "accepted")}</td>
-          <td>${cell(day, previous, "homeworks", "fixRequired")}</td>
-          <td>${cell(day, previous, "tests", "completed")}</td>
-        </tr>`;
-      }).join("");
-      table.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+      toolbar.hidden = false;
+      const needsDetail = view.scope !== "summary";
+      if (needsDetail && !days.some(detailed)) {
+        charts.innerHTML = "";
+        table.innerHTML = "";
+        note.textContent = "В сохранённых снимках ещё нет курсов, тестов, домашек и РНО. Нажмите «Сохранить сегодняшний снимок» ещё раз.";
+        return;
+      }
+      note.textContent = "Снимок активного журнала за сегодняшний день по Москве. Повторное сохранение обновляет этот день. Просмотры не сохраняются.";
+      const result = view.scope === "courses" ? courseView()
+        : view.scope === "tests" ? testView()
+        : view.scope === "homeworks" ? homeworkView()
+        : view.scope === "revisions" ? revisionView()
+        : summaryView();
+      if (!view.chart && !view.table) {
+        charts.innerHTML = `<p class="note">Включите график или таблицу в настройке вида.</p>`;
+        table.innerHTML = "";
+        return;
+      }
+      charts.innerHTML = view.chart ? result.drawn : "";
+      table.innerHTML = view.table && result.rows.length ? tableHtml(result.headers, result.rows) : "";
+      if (view.table && !result.rows.length) {
+        table.innerHTML = `<p class="note">Нет данных для выбранного фильтра.</p>`;
+      }
     }
 
-    fetch("/api/stats/days")
-      .then((response) => {
-        if (!response.ok) throw new Error("Не удалось загрузить статистику");
-        return response.json();
-      })
-      .then(render)
-      .catch((error) => {
+    toolbar.addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      if (button.dataset.scope) view.scope = button.dataset.scope;
+      else if (button.dataset.course) toggle(view.courses, Number(button.dataset.course));
+      else if (button.dataset.metric) toggle(view.metrics, button.dataset.metric);
+      else if (button.dataset.status) toggle(view.statuses, button.dataset.status);
+      else if (button.dataset.toggle) view[button.dataset.toggle] = !view[button.dataset.toggle];
+      else return;
+      saveView();
+      paint();
+    });
+
+    function authorization() {
+      const token = (localStorage.getItem("knowledgepoint.token") || "").trim();
+      if (!token) return "";
+      return token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
+    }
+
+    async function readBody(response) {
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "Не удалось загрузить статистику");
+      return body;
+    }
+
+    async function load() {
+      const response = await fetch("/api/stats/days", { headers: { Authorization: authorization() } });
+      days = await readBody(response);
+      if (!days.length) {
+        note.textContent = "Снимков ещё нет. Нажмите «Сохранить сегодняшний снимок», чтобы записать курсы, тесты, домашки и РНО за сегодня.";
+      }
+      paint();
+    }
+
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      note.textContent = "Сохранение";
+      try {
+        await readBody(await fetch("/api/stats/days", { method: "POST", headers: { Authorization: authorization() } }));
+        await load();
+      } catch (error) {
+        note.textContent = error.message;
+      } finally {
+        save.disabled = false;
+      }
+    });
+
+    if (!authorization()) {
+      note.textContent = "Сохраните токен кабинета на странице журнала.";
+    } else {
+      save.hidden = false;
+      load().catch((error) => {
         note.textContent = error.message;
       });
+    }
   </script>
 </body>
 </html>

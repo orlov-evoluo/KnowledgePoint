@@ -524,8 +524,23 @@
       };
     }
 
+    const TOKEN_KEY = "knowledgepoint.token";
+
+    function browserToken() {
+      const value = localStorage.getItem(TOKEN_KEY);
+      return value && value.trim() ? value.trim() : "";
+    }
+
+    function authHeaders(extra) {
+      const headers = { ...(extra || {}) };
+      const token = browserToken();
+      if (!token) return headers;
+      headers.Authorization = token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
+      return headers;
+    }
+
     async function api(path) {
-      const response = await fetch("/api" + path);
+      const response = await fetch("/api" + path, { headers: authHeaders() });
       const body = await response.json().catch(() => ({}));
       if (response.status === 401) throw new Error("Кабинет отклонил токен");
       if (!response.ok) throw new Error(body.error || "Не удалось загрузить данные");
@@ -916,21 +931,39 @@
       }
     });
 
-    function paintSession(session) {
-      tokenForget.hidden = !session.stored;
-      if (session.stored) tokenNote.textContent = "Токен сохранён локально";
-      else if (session.ready) tokenNote.textContent = "Сейчас используется токен из окружения";
-      else tokenNote.textContent = "Сохраните токен, чтобы открыть журнал";
+    function paintBrowser(present) {
+      tokenForget.hidden = !present;
+      tokenNote.textContent = present
+        ? "Токен сохранён в этом браузере"
+        : "Сохраните токен, чтобы открыть журнал";
+    }
+
+    async function publishToken(token) {
+      const response = await fetch("/api/session", {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ token }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "Не удалось сохранить токен");
+      localStorage.setItem(TOKEN_KEY, token.trim());
     }
 
     async function boot() {
-      const session = await fetch("/api/session").then((response) => response.json());
-      paintSession(session);
-      if (!session.ready) {
+      const token = browserToken();
+      paintBrowser(Boolean(token));
+      if (!token) {
         nameEl.textContent = "Успеваемость";
+        general = null;
         coursesEl.innerHTML = `<p class="message">Сохраните токен кабинета, чтобы загрузить журнал.</p>`;
         lessonsEl.innerHTML = "";
+        statsEl.innerHTML = "";
         return;
+      }
+      try {
+        await publishToken(token);
+      } catch (error) {
+        tokenNote.textContent = error.message;
       }
       const profile = await api("/profile");
       studentId = profile.client.id;
@@ -951,27 +984,20 @@
 
     tokenForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const token = tokenInput.value.trim();
-      tokenNote.textContent = "Сохранение";
-      try {
-        const response = await fetch("/api/session", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ token }),
-        });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(body.error || "Не удалось сохранить токен");
-        tokenInput.value = "";
-        paintSession(body);
-        await boot();
-      } catch (error) {
-        tokenNote.textContent = error.message;
-        coursesEl.innerHTML = `<p class="message">${esc(error.message)}</p>`;
-      }
+        const token = tokenInput.value.trim();
+        tokenNote.textContent = "Сохранение";
+        try {
+          await publishToken(token);
+          tokenInput.value = "";
+          await boot();
+        } catch (error) {
+          tokenNote.textContent = error.message;
+          coursesEl.innerHTML = `<p class="message">${esc(error.message)}</p>`;
+        }
     });
 
     tokenForget.addEventListener("click", async () => {
-      await fetch("/api/session", { method: "DELETE" });
+      localStorage.removeItem(TOKEN_KEY);
       studentId = null;
       openCourseId = null;
       openDetail = null;

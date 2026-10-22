@@ -1,5 +1,6 @@
 package knowledgepoint;
 
+import knowledgepoint.cabinet.CabinetStudent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.IOException;
@@ -15,6 +17,8 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -31,6 +35,9 @@ class SessionApiTest {
   @Autowired
   private MockMvc mvc;
 
+  @MockitoBean
+  private CabinetStudent students;
+
   @DynamicPropertySource
   static void properties(DynamicPropertyRegistry registry) {
     String database = DIR.resolve("session.sqlite").toAbsolutePath().toString().replace('\\', '/');
@@ -41,7 +48,8 @@ class SessionApiTest {
 
   @BeforeEach
   void emptySession() throws Exception {
-    mvc.perform(delete("/api/session")).andExpect(status().isOk());
+    mvc.perform(delete("/api/session").header("Authorization", "Bearer dummy-token-value-not-real-123456"))
+        .andExpect(status().isOk());
   }
 
   @Test
@@ -83,6 +91,33 @@ class SessionApiTest {
 
     mvc.perform(get("/api/schedule").queryParam("startAt", "2026-10-01").queryParam("endAt", "2026-10-31"))
         .andExpect(status().isServiceUnavailable());
+  }
+
+  @Test
+  void serverTokenDoesNotAuthorizeVisitors() throws Exception {
+    mvc.perform(post("/api/session")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"token\":\"dummy-token-value-not-real-123456\"}"))
+        .andExpect(status().isOk());
+
+    mvc.perform(get("/api/profile"))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.error").value("Сохраните токен кабинета"));
+
+    mvc.perform(post("/api/session")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"token\":\"another-dummy-token-value-654321\"}"))
+        .andExpect(status().isUnauthorized());
+
+    mvc.perform(get("/api/stats/days"))
+        .andExpect(status().isServiceUnavailable());
+
+    when(students.identify(anyString())).thenReturn(new CabinetStudent.StudentAccess(401, 0));
+    mvc.perform(get("/api/stats/days").header("Authorization", "Bearer other-token-value-not-real-123456"))
+        .andExpect(status().isUnauthorized());
+
+    mvc.perform(get("/api/stats/days").header("Authorization", "Bearer dummy-token-value-not-real-123456"))
+        .andExpect(status().isUnauthorized());
   }
 
   @Test

@@ -29,11 +29,9 @@ public class CabinetProxyController {
   private static final List<String> FORWARDED = List.of("startDate", "endDate", "startAt", "endAt");
   private static final Pattern DAY = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 
-  private final SessionStore sessions;
   private final CabinetClient cabinet;
 
-  public CabinetProxyController(SessionStore sessions, CabinetClient cabinet) {
-    this.sessions = sessions;
+  public CabinetProxyController(CabinetClient cabinet) {
     this.cabinet = cabinet;
   }
 
@@ -47,8 +45,8 @@ public class CabinetProxyController {
     if (ALLOWED.stream().noneMatch(pattern -> pattern.matcher(path).matches())) {
       return json(404, "{\"error\":\"not found\"}");
     }
-    String token = sessions.authHeader();
-    if (token == null) {
+    String token = SessionStore.normalize(request.getHeader("Authorization"));
+    if (token == null || token.length() < 20) {
       return json(503, "{\"error\":\"Сохраните токен кабинета\"}");
     }
     try {

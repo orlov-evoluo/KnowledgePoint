@@ -33,9 +33,12 @@ public class SessionController {
   }
 
   @DeleteMapping
-  public SessionState delete() {
+  public ResponseEntity<?> delete(HttpServletRequest request) {
+    if (store.authHeader() != null && !store.matches(request.getHeader("Authorization"))) {
+      return ResponseEntity.status(401).body(new ErrorResponse("Сохраните токен кабинета"));
+    }
     store.clear();
-    return store.state();
+    return ResponseEntity.ok(store.state());
   }
 
   @PostMapping
@@ -59,6 +62,11 @@ public class SessionController {
     String normalized = SessionStore.normalize(token);
     if (normalized == null || normalized.length() < 20) {
       return ResponseEntity.badRequest().body(new ErrorResponse("Вставьте токен кабинета"));
+    }
+    if (store.authHeader() != null
+        && !store.matches(request.getHeader("Authorization"))
+        && !store.matches(normalized)) {
+      return ResponseEntity.status(401).body(new ErrorResponse("Сохраните токен кабинета"));
     }
     store.save(normalized);
     return ResponseEntity.ok(store.state());

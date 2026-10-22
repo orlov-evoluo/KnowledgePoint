@@ -1,6 +1,7 @@
 package knowledgepoint.stats;
 
 public record DailyStat(
+    long studentId,
     String day,
     int watchesCompleted,
     int watchesTotal,
@@ -11,6 +12,7 @@ public record DailyStat(
     int homeworksFixRequired,
     int testsCompleted,
     int testsTotal,
-    String capturedAt
+    String capturedAt,
+    String breakdown
 ) {
 }

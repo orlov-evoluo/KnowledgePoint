@@ -235,8 +235,21 @@
       return { key: `${value.year}-${value.month}-${value.day}`, time: `${value.hour}:${value.minute}` };
     }
 
+    const TOKEN_KEY = "knowledgepoint.token";
+
+    function browserToken() {
+      const value = localStorage.getItem(TOKEN_KEY);
+      return value && value.trim() ? value.trim() : "";
+    }
+
+    function authHeaders() {
+      const token = browserToken();
+      if (!token) return {};
+      return { Authorization: token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}` };
+    }
+
     async function api(path) {
-      const response = await fetch("/api" + path);
+      const response = await fetch("/api" + path, { headers: authHeaders() });
       const body = await response.json().catch(() => ({}));
       if (response.status === 401) throw new Error("Кабинет отклонил токен");
       if (!response.ok) throw new Error(body.error || "Не удалось загрузить данные");
@@ -336,6 +349,11 @@
 
     async function show() {
       title.textContent = `${MONTHS[cursor.month - 1]} ${cursor.year}`;
+      if (!browserToken()) {
+        note.textContent = "Сохраните токен кабинета на странице журнала.";
+        daysEl.innerHTML = "";
+        return;
+      }
       note.textContent = "Загрузка";
       daysEl.innerHTML = "";
       const start = keyOf(cursor.year, cursor.month, 1);
@@ -351,8 +369,7 @@
     }
 
     async function prepareLessons() {
-      const session = await fetch("/api/session").then((response) => response.json());
-      if (!session.ready) {
+      if (!browserToken()) {
         const error = new Error("Сохраните токен кабинета на странице журнала.");
         error.empty = true;
         throw error;

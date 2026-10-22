@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -54,6 +56,17 @@ public class SessionStore {
       return stored;
     }
     return normalize(environmentToken);
+  }
+
+  public boolean matches(String presented) {
+    String expected = authHeader();
+    String actual = normalize(presented);
+    if (expected == null || actual == null) {
+      return false;
+    }
+    return MessageDigest.isEqual(
+        expected.getBytes(StandardCharsets.UTF_8),
+        actual.getBytes(StandardCharsets.UTF_8));
   }
 
   public static String normalize(String raw) {
