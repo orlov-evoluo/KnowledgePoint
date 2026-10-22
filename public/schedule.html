@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Расписание</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <style>
     :root {
       --bg: #f3efe6;
@@ -119,6 +120,21 @@
       padding: 0.2rem 0.35rem 0.3rem;
       background: #f7f1e8;
       border-radius: 0.35rem;
+    }
+
+    .event:hover { background: #efe6d8; }
+
+    .event-open {
+      display: block;
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .event-open:hover strong { text-decoration: underline; }
+
+    .event-open:focus-visible {
+      outline: 2px solid var(--ink);
+      outline-offset: 2px;
     }
 
     .event.record { border-left-color: var(--self); }
@@ -296,7 +312,7 @@
       return bundle.map;
     }
 
-    function render(schedule, known) {
+    function render(schedule, known, statuses) {
       const count = daysInMonth(cursor.year, cursor.month);
       const lead = weekday(cursor.year, cursor.month, 1);
       const cells = [];
@@ -308,7 +324,9 @@
         const body = events.map((item) => {
           const match = known.get(`${item.courseId}:${item.lessonId}`);
           const kind = item.productType === "record" && item.lessonType === "record" && !match ? " pending" : item.lessonType === "record" ? " record" : "";
-          return `<article class="event${kind}"><time>${esc(item.time)}</time><strong>${esc(item.subjectName)}</strong>${eventLinks(item, match)}</article>`;
+          const list = statuses.get(item.courseId) === "allfinished" ? "allfinished" : "active";
+          const journal = `/?course=${encodeURIComponent(item.courseId)}&list=${list}`;
+          return `<article class="event${kind}"><a class="event-open" href="${esc(journal)}"><time>${esc(item.time)}</time><strong>${esc(item.subjectName)}</strong></a>${eventLinks(item, match)}</article>`;
         }).join("");
         cells.push(`<div class="day${todayClass}"><b>${day}</b>${body}</div>`);
       }
@@ -329,7 +347,7 @@
       }).filter(Boolean).sort((a, b) => a.time.localeCompare(b.time));
       if (!lessons) lessons = await prepareLessons();
       const known = await knownLessons(schedule, lessons);
-      render(schedule, known);
+      render(schedule, known, lessons.statuses);
     }
 
     async function prepareLessons() {
@@ -346,8 +364,15 @@
         api(`/journal/${studentId}/allfinished`),
       ]);
       const courses = new Map();
-      journals.forEach((journal) => (journal.courses || []).forEach((course) => courses.set(course.id, course)));
-      return { studentId, courses, loaded: new Set(), map: new Map() };
+      const statuses = new Map();
+      journals.forEach((journal, index) => {
+        const list = index === 0 ? "active" : "allfinished";
+        (journal.courses || []).forEach((course) => {
+          if (!courses.has(course.id)) courses.set(course.id, course);
+          if (!statuses.has(course.id)) statuses.set(course.id, list);
+        });
+      });
+      return { studentId, courses, statuses, loaded: new Set(), map: new Map() };
     }
 
     document.querySelector("#prev").addEventListener("click", () => {

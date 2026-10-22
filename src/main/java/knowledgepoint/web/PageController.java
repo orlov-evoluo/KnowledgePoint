@@ -35,6 +35,17 @@ public class PageController {
     return html(sibling("schedule.html"));
   }
 
+  @GetMapping("/favicon.svg")
+  public ResponseEntity<String> favicon() throws IOException {
+    Path file = sibling("favicon.svg");
+    if (!Files.isRegularFile(file)) {
+      return ResponseEntity.notFound().build();
+    }
+    return ResponseEntity.ok()
+        .contentType(MediaType.valueOf("image/svg+xml"))
+        .body(Files.readString(file));
+  }
+
   private Path sibling(String name) {
     return page.getParent() == null ? Path.of(name) : page.getParent().resolve(name);
   }

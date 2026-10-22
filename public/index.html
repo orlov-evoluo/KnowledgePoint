@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Успеваемость</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <style>
     :root {
       --bg: #f3efe6;
@@ -17,8 +18,6 @@
       --unwatched-bg: #ece7df;
       --todo: #a33b2b;
       --todo-bg: #fde8e4;
-      --sent: #1d5c99;
-      --sent-bg: #e5f0fa;
       --fix: #a15c07;
       --fix-bg: #fbf0dc;
       --done: #0f6b62;
@@ -207,7 +206,6 @@
     .watched { --chip: var(--watched-bg); --dot: var(--watched); }
     .unwatched { --chip: var(--unwatched-bg); --dot: var(--unwatched); }
     .todo { --chip: var(--todo-bg); --dot: var(--todo); }
-    .sent { --chip: var(--sent-bg); --dot: var(--sent); }
     .fix { --chip: var(--fix-bg); --dot: var(--fix); }
     .done { --chip: var(--done-bg); --dot: var(--done); }
     .self { --chip: var(--self-bg); --dot: var(--self); }
@@ -323,7 +321,6 @@
     }
 
     .lesson.todo { --edge: var(--todo); }
-    .lesson.sent { --edge: var(--sent); }
     .lesson.fix { --edge: var(--fix); }
     .lesson.done { --edge: var(--done); }
     .lesson.self { --edge: var(--self); }
@@ -395,7 +392,6 @@
         <button type="button" class="watched" data-kind="watched" aria-pressed="false">Просмотрено</button>
         <button type="button" class="unwatched" data-kind="unwatched" aria-pressed="false">Не просмотрено</button>
         <button type="button" class="todo" data-kind="todo" aria-pressed="false">Не сделано</button>
-        <button type="button" class="sent" data-kind="sent" aria-pressed="false">Отправлено</button>
         <button type="button" class="fix" data-kind="fix" aria-pressed="false">На доработке</button>
         <button type="button" class="done" data-kind="done" aria-pressed="false">Выполнено</button>
         <button type="button" class="self" data-kind="self" aria-pressed="false">Самопроверка</button>
@@ -503,7 +499,6 @@
       if (lesson.homework == null) return null;
       const known = WORK[lesson.status];
       if (known) return { kind: known[0], label: known[1] };
-      if (lesson.messageId) return { kind: "sent", label: "Отправлено" };
       return null;
     }
 
@@ -833,7 +828,17 @@
       const profile = await api("/profile");
       studentId = profile.client.id;
       nameEl.textContent = `${profile.client.firstName} ${profile.client.lastName}`;
-      await load("active");
+      const params = new URLSearchParams(location.search);
+      const courseId = Number(params.get("course"));
+      const preferred = params.get("list") === "allfinished" ? "allfinished" : "active";
+      await load(Number.isFinite(courseId) ? preferred : "active");
+      if (!Number.isFinite(courseId)) return;
+      if (!courses.some((course) => course.id === courseId)) {
+        await load(preferred === "active" ? "allfinished" : "active");
+      }
+      if (!courses.some((course) => course.id === courseId)) return;
+      await openCourse(courseId);
+      coursesEl.querySelector(`[data-id="${courseId}"]`)?.scrollIntoView({ block: "nearest" });
     }
 
     tokenForm.addEventListener("submit", async (event) => {
