@@ -161,6 +161,39 @@ class DailyStatsApiTest {
         .andExpect(jsonPath("$[0].breakdown.tests[0].quality").value(90));
   }
 
+  @Test
+  void refreshedTokenKeepsTheSameStudentHistory() throws Exception {
+    String journal = """
+        {
+          "general": {
+            "watches": {"completed": 1, "total": 2},
+            "webinars": {"completed": 1, "total": 1},
+            "homeworks": {"accepted": 1, "total": 2, "fixRequired": 0}
+          },
+          "stats": {"courses": [{"test": {"completed": 4, "total": 5}}]}
+        }
+        """;
+    when(students.identify("Bearer old-token-value-not-real-123456")).thenReturn(new CabinetStudent.StudentAccess(200, 7));
+    when(students.identify("Bearer new-token-value-not-real-654321")).thenReturn(new CabinetStudent.StudentAccess(200, 7));
+    when(students.identify("Bearer other-student-token-value-888888")).thenReturn(new CabinetStudent.StudentAccess(200, 9));
+    when(cabinet.get(eq("/journal/7/active"), anyString())).thenReturn(new CabinetResponse(200, journal));
+    stats.save(new DailyStat(9, "2026-10-20", 1, 1, 1, 1, 1, 1, 1, 9, 9, "2026-10-20T17:59:00Z", null));
+
+    mvc.perform(post("/api/stats/days").header("Authorization", "Bearer new-token-value-not-real-654321"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.tests.completed").value(4));
+
+    mvc.perform(get("/api/stats/days").header("Authorization", "Bearer old-token-value-not-real-123456"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].tests.completed").value(4));
+
+    mvc.perform(get("/api/stats/days").header("Authorization", "Bearer other-student-token-value-888888"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].tests.completed").value(9));
+  }
+
   private static Path createDir() {
     try {
       Path dir = Files.createTempDirectory("knowledge-point-stats");

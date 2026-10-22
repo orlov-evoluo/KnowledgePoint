@@ -156,6 +156,7 @@
       <button type="button" class="nav" id="save" hidden>Сохранить сегодняшний снимок</button>
     </div>
     <p class="note" id="note">Загрузка</p>
+    <p class="note" id="captured" hidden></p>
     <div class="toolbar" id="toolbar" hidden>
       <div class="panel" id="scopes"></div>
       <div class="panel" id="course-filter"><span class="label">Курсы</span><span id="course-pills"></span></div>
@@ -173,6 +174,7 @@
   </div>
   <script>
     const note = document.querySelector("#note");
+    const captured = document.querySelector("#captured");
     const charts = document.querySelector("#charts");
     const table = document.querySelector("#table");
     const toolbar = document.querySelector("#toolbar");
@@ -610,8 +612,29 @@
       return { drawn, headers, rows };
     }
 
+    function showCaptured() {
+      const stamps = days.map((day) => day.capturedAt).filter(Boolean).sort();
+      const iso = stamps[stamps.length - 1];
+      if (!iso) {
+        captured.hidden = true;
+        captured.textContent = "";
+        return;
+      }
+      const formatted = new Intl.DateTimeFormat("ru-RU", {
+        timeZone: "Europe/Moscow",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(iso));
+      captured.hidden = false;
+      captured.textContent = `Последний снимок: ${formatted} мск`;
+    }
+
     function paint() {
       paintControls();
+      showCaptured();
       if (!days.length) {
         toolbar.hidden = true;
         charts.innerHTML = "";

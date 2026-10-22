@@ -934,18 +934,11 @@
     function paintBrowser(present) {
       tokenForget.hidden = !present;
       tokenNote.textContent = present
-        ? "Токен сохранён в этом браузере"
+        ? "Токен в этом браузере. История привязана к ученику"
         : "Сохраните токен, чтобы открыть журнал";
     }
 
-    async function publishToken(token) {
-      const response = await fetch("/api/session", {
-        method: "POST",
-        headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ token }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || "Не удалось сохранить токен");
+    function rememberToken(token) {
       localStorage.setItem(TOKEN_KEY, token.trim());
     }
 
@@ -959,11 +952,6 @@
         lessonsEl.innerHTML = "";
         statsEl.innerHTML = "";
         return;
-      }
-      try {
-        await publishToken(token);
-      } catch (error) {
-        tokenNote.textContent = error.message;
       }
       const profile = await api("/profile");
       studentId = profile.client.id;
@@ -985,10 +973,13 @@
     tokenForm.addEventListener("submit", async (event) => {
       event.preventDefault();
         const token = tokenInput.value.trim();
-        tokenNote.textContent = "Сохранение";
+        if (token.length < 20) {
+          tokenNote.textContent = "Вставьте токен кабинета";
+          return;
+        }
+        rememberToken(token);
+        tokenInput.value = "";
         try {
-          await publishToken(token);
-          tokenInput.value = "";
           await boot();
         } catch (error) {
           tokenNote.textContent = error.message;
