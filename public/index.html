@@ -24,7 +24,11 @@
       --done-bg: #e3f4f1;
       --self: #5b4b8a;
       --self-bg: #efeaf8;
+      --header-pad: 1.1rem;
+      --header-row: 4.6rem;
     }
+
+    html { scrollbar-gutter: stable; }
 
     * { box-sizing: border-box; }
 
@@ -40,18 +44,33 @@
       width: min(76rem, calc(100% - 2rem));
       height: 100vh;
       margin: 0 auto;
-      padding: 1.1rem 0 1rem;
+      padding: calc(var(--header-pad) + var(--header-row)) 0 1rem;
       display: flex;
       flex-direction: column;
       min-height: 0;
     }
 
+    .site-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 5;
+      background: var(--bg);
+      padding: var(--header-pad) 1rem 0;
+    }
+
     .top {
       display: flex;
       justify-content: space-between;
-      gap: 1.5rem;
-      align-items: flex-end;
+      align-items: center;
+      gap: 1rem;
+      width: min(76rem, 100%);
+      min-height: var(--header-row);
+      margin: 0 auto;
     }
+
+    .title { min-width: 0; flex: 1 1 auto; }
 
     .eyebrow {
       margin: 0;
@@ -66,9 +85,12 @@
       font-family: Georgia, "Palatino Linotype", serif;
       font-size: clamp(1.7rem, 3vw, 2.2rem);
       font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .top-links { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+    .tabs { display: flex; gap: 0.45rem; flex: 0 0 auto; align-items: center; }
 
     .nav {
       min-height: 2.5rem;
@@ -79,9 +101,12 @@
       text-decoration: none;
       display: inline-flex;
       align-items: center;
+      white-space: nowrap;
     }
 
-    .filters { display: flex; gap: 0.45rem; }
+    .nav.current { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+
+    .filters { display: flex; gap: 0.45rem; margin-top: 0.85rem; }
 
     .filters button {
       min-height: 2.5rem;
@@ -379,7 +404,6 @@
 
     @media (max-width: 860px) {
       .shell { height: auto; }
-      .top { flex-direction: column; align-items: flex-start; }
       .workspace { grid-template-columns: 1fr; }
       .courses, .detail { overflow: visible; }
       .stats { gap: 0.75rem 1.25rem; }
@@ -388,22 +412,24 @@
 </head>
 <body>
   <div class="shell">
-    <header>
+    <header class="site-header">
       <div class="top">
-        <div>
+        <div class="title">
           <p class="eyebrow">Успеваемость</p>
-          <h1 id="name">Загрузка</h1>
+          <h1 id="name">Журнал</h1>
         </div>
-        <div class="top-links">
+        <nav class="tabs" aria-label="Страницы">
+          <a class="nav current" href="/" aria-current="page">Журнал</a>
           <a class="nav" href="/schedule">Расписание</a>
           <a class="nav" href="/analytics">Динамика</a>
-          <div class="filters" role="group" aria-label="Статус курсов">
-            <button type="button" data-status="active" aria-pressed="true">Активные</button>
-            <button type="button" data-status="allfinished" aria-pressed="false">Завершённые</button>
-          </div>
-        </div>
+        </nav>
       </div>
-      <form id="token-form" class="token-form">
+    </header>
+    <div class="filters" role="group" aria-label="Статус курсов">
+      <button type="button" data-status="active" aria-pressed="true">Активные</button>
+      <button type="button" data-status="allfinished" aria-pressed="false">Завершённые</button>
+    </div>
+    <form id="token-form" class="token-form">
         <label for="token">Токен</label>
         <input id="token" name="token" type="password" autocomplete="off" spellcheck="false" placeholder="Вставьте токен кабинета">
         <button type="submit">Сохранить</button>
@@ -419,7 +445,6 @@
         <button type="button" class="done" data-kind="done" aria-pressed="false">Выполнено</button>
         <button type="button" class="self" data-kind="self" aria-pressed="false">Самопроверка</button>
       </div>
-    </header>
     <div class="workspace">
       <section class="courses" id="courses" aria-label="Курсы"></section>
       <section class="detail" id="lessons" aria-label="Уроки">
@@ -436,6 +461,13 @@
     };
 
     const nameEl = document.querySelector("#name");
+    const PAGE = "Журнал";
+
+    function setHeading(name) {
+      const text = name ? `${name} : ${PAGE}` : PAGE;
+      nameEl.textContent = text;
+      document.title = text;
+    }
     const statsEl = document.querySelector("#stats");
     const coursesEl = document.querySelector("#courses");
     const lessonsEl = document.querySelector("#lessons");
@@ -661,7 +693,7 @@
       }
       const tests = overallTest();
       const course = courses.find((item) => item.id === openCourseId);
-      const overall = `<div class="stat-group">${course ? '<p class="stat-caption all">Все курсы</p>' : ""}<div class="stats-row">${statRow(summaryItems({
+      const overall = `<div class="stat-group"><p class="stat-caption all">Все курсы</p><div class="stats-row">${statRow(summaryItems({
         watches: general.watches,
         webinars: general.webinars,
         homeworks: general.homeworks,
@@ -864,7 +896,7 @@
       });
       const journal = await api(`/journal/${studentId}/${status}`);
       const student = journal.student;
-      nameEl.textContent = student ? `${student.firstName} ${student.lastName}` : "Успеваемость";
+      setHeading(student ? `${student.firstName} ${student.lastName}`.trim() : "");
       general = journal.general;
       const rich = new Map((journal.stats?.courses || []).map((course) => [course.id, course]));
       courses = [...(journal.courses || [])]
@@ -946,7 +978,7 @@
       const token = browserToken();
       paintBrowser(Boolean(token));
       if (!token) {
-        nameEl.textContent = "Успеваемость";
+        setHeading("");
         general = null;
         coursesEl.innerHTML = `<p class="message">Сохраните токен кабинета, чтобы загрузить журнал.</p>`;
         lessonsEl.innerHTML = "";
@@ -955,7 +987,7 @@
       }
       const profile = await api("/profile");
       studentId = profile.client.id;
-      nameEl.textContent = `${profile.client.firstName} ${profile.client.lastName}`;
+      setHeading(`${profile.client.firstName} ${profile.client.lastName}`.trim());
       const params = new URLSearchParams(location.search);
       const rawCourse = params.get("course");
       const courseId = rawCourse ? Number(rawCourse) : NaN;
@@ -999,7 +1031,7 @@
     });
 
     boot().catch((error) => {
-      nameEl.textContent = "Успеваемость";
+      setHeading("");
       coursesEl.innerHTML = `<p class="message">${esc(error.message)}</p>`;
     });
   </script>

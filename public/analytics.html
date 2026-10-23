@@ -17,7 +17,11 @@
       --fix: #a15c07;
       --done: #0f6b62;
       --self: #5b4b8a;
+      --header-pad: 1.1rem;
+      --header-row: 4.6rem;
     }
+
+    html { scrollbar-gutter: stable; }
 
     * { box-sizing: border-box; }
 
@@ -32,10 +36,30 @@
     .shell {
       width: min(76rem, calc(100% - 2rem));
       margin: 0 auto;
-      padding: 1.1rem 0 2rem;
+      padding: calc(var(--header-pad) + var(--header-row)) 0 2rem;
     }
 
-    .top { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-end; }
+    .site-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 5;
+      background: var(--bg);
+      padding: var(--header-pad) 1rem 0;
+    }
+
+    .top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      width: min(76rem, 100%);
+      min-height: var(--header-row);
+      margin: 0 auto;
+    }
+
+    .title { min-width: 0; flex: 1 1 auto; }
 
     .eyebrow {
       margin: 0;
@@ -50,9 +74,14 @@
       font-family: Georgia, "Palatino Linotype", serif;
       font-size: clamp(1.7rem, 3vw, 2.2rem);
       font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .tabs, .panel { display: flex; gap: 0.45rem; flex-wrap: wrap; align-items: center; }
+    .tabs { display: flex; gap: 0.45rem; flex: 0 0 auto; flex-wrap: nowrap; align-items: center; }
+
+    .panel { display: flex; gap: 0.45rem; flex-wrap: wrap; align-items: center; }
 
     .nav, .pill {
       min-height: 2.5rem;
@@ -65,6 +94,7 @@
       display: inline-flex;
       align-items: center;
       font: inherit;
+      white-space: nowrap;
       cursor: pointer;
     }
 
@@ -136,21 +166,23 @@
 
     .legend i { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 99px; margin-right: 0.3rem; }
 
-    .wrap { overflow-x: auto; }
+    .wrap { max-width: 100%; overflow-x: auto; }
   </style>
 </head>
 <body>
   <div class="shell">
-    <header class="top">
-      <div>
-        <p class="eyebrow">Успеваемость</p>
-        <h1>Динамика</h1>
+    <header class="site-header">
+      <div class="top">
+        <div class="title">
+          <p class="eyebrow">Успеваемость</p>
+          <h1 id="name">Динамика</h1>
+        </div>
+        <nav class="tabs" aria-label="Страницы">
+          <a class="nav" href="/">Журнал</a>
+          <a class="nav" href="/schedule">Расписание</a>
+          <a class="nav current" href="/analytics" aria-current="page">Динамика</a>
+        </nav>
       </div>
-      <nav class="tabs">
-        <a class="nav" href="/">Журнал</a>
-        <a class="nav" href="/schedule">Расписание</a>
-        <a class="nav current" href="/analytics" aria-current="page">Динамика</a>
-      </nav>
     </header>
     <div class="save-row">
       <button type="button" class="nav" id="save" hidden>Сохранить сегодняшний снимок</button>
@@ -173,7 +205,31 @@
     <div class="wrap" id="table"></div>
   </div>
   <script>
+    const PAGE = "Динамика";
+    const heading = document.querySelector("#name");
     const note = document.querySelector("#note");
+
+    function setHeading(name) {
+      const text = name ? `${name} : ${PAGE}` : PAGE;
+      heading.textContent = text;
+      document.title = text;
+    }
+
+    async function paintHeading() {
+      if (!authorization()) {
+        setHeading("");
+        return;
+      }
+      try {
+        const response = await fetch("/api/profile", { headers: { Authorization: authorization() } });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) return;
+        const client = body.client || {};
+        setHeading(`${client.firstName || ""} ${client.lastName || ""}`.trim());
+      } catch {
+        setHeading("");
+      }
+    }
     const captured = document.querySelector("#captured");
     const charts = document.querySelector("#charts");
     const table = document.querySelector("#table");
@@ -714,6 +770,7 @@
       }
     });
 
+    paintHeading();
     if (!authorization()) {
       note.textContent = "Сохраните токен кабинета на странице журнала.";
     } else {
