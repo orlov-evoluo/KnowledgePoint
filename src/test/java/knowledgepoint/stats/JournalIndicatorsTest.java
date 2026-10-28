@@ -91,7 +91,7 @@ class JournalIndicatorsTest {
         json);
     JsonNode breakdown = json.readTree(stat.breakdown());
 
-    assertEquals(64, breakdown.path("summary").path("testQuality").asInt());
+    assertEquals(63.5, breakdown.path("summary").path("testQuality").asDouble());
     assertEquals("Алгебра", breakdown.path("courses").get(0).path("name").asText());
     assertEquals(1, breakdown.path("courses").get(0).path("testsCompleted").asInt());
     assertEquals(75, breakdown.path("courses").get(0).path("testQuality").asInt());

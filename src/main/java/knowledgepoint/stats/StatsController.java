@@ -73,10 +73,10 @@ public class StatsController {
 
   private DayResponse day(DailyStat stat) {
     JsonNode breakdown = readBreakdown(stat.breakdown());
-    Integer quality = null;
+    Double quality = null;
     JsonNode stored = breakdown == null ? null : breakdown.path("summary").get("testQuality");
     if (stored != null && stored.isNumber()) {
-      quality = stored.asInt();
+      quality = stored.asDouble();
     }
     return new DayResponse(
         stat.day(),
@@ -102,7 +102,7 @@ public class StatsController {
       String day,
       Homework homeworks,
       Count tests,
-      Integer testQuality,
+      Double testQuality,
       JsonNode breakdown,
       String capturedAt
   ) {

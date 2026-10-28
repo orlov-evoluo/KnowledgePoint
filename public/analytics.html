@@ -291,9 +291,38 @@
       return String(value ?? "").replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char]));
     }
 
-    function percent(done, total) {
+    function ratio(done, total) {
       if (!total) return 0;
-      return Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+      return (done / total) * 100;
+    }
+
+    function formatFixed(value, digits) {
+      return value.toFixed(digits).replace(".", ",");
+    }
+
+    function formatPercent(value) {
+      return `${formatFixed(value, 2)}%`;
+    }
+
+    function changed(current, previous, digits) {
+      if (typeof current !== "number" || typeof previous !== "number") return null;
+      if (digits == null) {
+        return current === previous ? null : current - previous;
+      }
+      const scale = 10 ** digits;
+      const rounded = Math.round((current - previous) * scale) / scale;
+      return rounded === 0 ? null : rounded;
+    }
+
+    function signed(value, digits) {
+      const body = digits == null ? String(value) : formatFixed(value, digits);
+      return value > 0 ? `+${body}` : body;
+    }
+
+    function deltaSpan(change, badUp, digits, suffix) {
+      if (change == null) return "";
+      const good = badUp ? change < 0 : change > 0;
+      return `<span class="delta ${good ? "up" : "down"}">${esc(signed(change, digits))}${suffix || ""}</span>`;
     }
 
     function toggle(list, value) {
@@ -397,7 +426,7 @@
       return {
         testsCompleted,
         testsTotal,
-        testQuality: pending || !weight ? null : Math.round(sum / weight),
+        testQuality: pending || !weight ? null : sum / weight,
         accepted: tutor ? accepted : null,
         homeworksTotal: tutor ? homeworksTotal : null,
         revisions,
@@ -406,27 +435,53 @@
     }
 
     function metricValue(summary, id) {
-      if (id === "tests") return summary.testsCompleted;
+      if (id === "tests") return ratio(summary.testsCompleted, summary.testsTotal);
       if (id === "quality") return summary.testQuality;
-      if (id === "accepted") return summary.accepted;
+      if (id === "accepted") {
+        if (summary.accepted == null) return null;
+        return ratio(summary.accepted, summary.homeworksTotal);
+      }
       return summary.revisions;
     }
 
     function metricText(summary, id) {
-      if (id === "tests") return `${summary.testsCompleted}/${summary.testsTotal} · ${percent(summary.testsCompleted, summary.testsTotal)}%`;
-      if (id === "quality") return summary.testQuality == null ? "—" : `${summary.testQuality}%`;
+      if (id === "tests") {
+        return `${summary.testsCompleted}/${summary.testsTotal} · ${formatPercent(ratio(summary.testsCompleted, summary.testsTotal))}`;
+      }
+      if (id === "quality") return summary.testQuality == null ? "—" : formatPercent(summary.testQuality);
       if (id === "accepted") {
         if (summary.selfOnly || summary.accepted == null) return "самопроверка";
-        return `${summary.accepted}/${summary.homeworksTotal} · ${percent(summary.accepted, summary.homeworksTotal)}%`;
+        return `${summary.accepted}/${summary.homeworksTotal} · ${formatPercent(ratio(summary.accepted, summary.homeworksTotal))}`;
       }
       return String(summary.revisions);
     }
 
-    function delta(current, previous, badUp) {
-      if (typeof current !== "number" || typeof previous !== "number" || current === previous) return "";
-      const change = current - previous;
-      const good = badUp ? change < 0 : change > 0;
-      return `<span class="delta ${good ? "up" : "down"}">${change > 0 ? "+" : ""}${change}</span>`;
+    function summaryCell(current, previous, id) {
+      const text = esc(metricText(current, id));
+      if (!previous) return text;
+      if (id === "tests") {
+        return text + deltaSpan(
+          changed(ratio(current.testsCompleted, current.testsTotal), ratio(previous.testsCompleted, previous.testsTotal), 2),
+          false,
+          2,
+          " п.п."
+        );
+      }
+      if (id === "quality") {
+        return text + deltaSpan(changed(current.testQuality, previous.testQuality, 2), false, 2, " п.п.");
+      }
+      if (id === "accepted") {
+        if (current.accepted == null || previous.accepted == null) return text;
+        return text
+          + deltaSpan(changed(current.accepted, previous.accepted, null), false, null, "")
+          + deltaSpan(
+            changed(ratio(current.accepted, current.homeworksTotal), ratio(previous.accepted, previous.homeworksTotal), 2),
+            false,
+            2,
+            " п.п."
+          );
+      }
+      return text + deltaSpan(changed(current.revisions, previous.revisions, null), true, null, "");
     }
 
     function chart(title, lines) {
@@ -531,8 +586,8 @@
         if (!current) return null;
         const previous = index ? points[index - 1] : null;
         return [
-          esc(day.day),
-          ...enabled.map(([id]) => `${esc(metricText(current, id))}${delta(metricValue(current, id), previous ? metricValue(previous, id) : null, id === "revisions")}`),
+          dayLabel(day),
+          ...enabled.map(([id]) => summaryCell(current, previous, id)),
         ];
       }).filter(Boolean);
       return { drawn, headers, rows };
@@ -551,9 +606,12 @@
           values: days.map((day) => {
             const found = (day.breakdown?.courses || []).find((item) => item.id === course.id);
             if (!found) return null;
-            if (id === "tests") return found.testsCompleted || 0;
+            if (id === "tests") return found.testsTotal ? ratio(found.testsCompleted || 0, found.testsTotal) : null;
             if (id === "quality") return typeof found.testQuality === "number" ? found.testQuality : null;
-            if (id === "accepted") return found.needTutor === false ? null : (found.homeworksAccepted || 0);
+            if (id === "accepted") {
+              if (found.needTutor === false || !found.homeworksTotal) return null;
+              return ratio(found.homeworksAccepted || 0, found.homeworksTotal);
+            }
             return found.needTutor === false ? 0 : (found.fixRequired || 0);
           }),
         })))).join("");
@@ -562,27 +620,35 @@
       const rows = courses.flatMap((course) => enabled.map(([id, label]) => [
         esc(course.name),
         esc(label),
-        ...days.map((day) => {
+        ...days.map((day, index) => {
           const found = (day.breakdown?.courses || []).find((item) => item.id === course.id);
-          return esc(courseCell(found, id));
+          const earlier = index ? (days[index - 1].breakdown?.courses || []).find((item) => item.id === course.id) : null;
+          return courseCell(found, earlier, id);
         }),
       ]));
       return { drawn, headers, rows };
     }
 
-    function courseCell(found, id) {
+    function courseCell(found, earlier, id) {
       if (!found) return "—";
       if (id === "tests") {
         const completed = found.testsCompleted || 0;
         const total = found.testsTotal || 0;
-        return `${completed}/${total} · ${percent(completed, total)}%`;
+        const previous = earlier ? ratio(earlier.testsCompleted || 0, earlier.testsTotal || 0) : null;
+        return `${completed}/${total} · ${esc(formatPercent(ratio(completed, total)))}${deltaSpan(changed(ratio(completed, total), previous, 2), false, 2, " п.п.")}`;
       }
-      if (id === "quality") return typeof found.testQuality === "number" ? `${found.testQuality}%` : "—";
+      if (id === "quality") {
+        if (typeof found.testQuality !== "number") return "—";
+        const previous = earlier && typeof earlier.testQuality === "number" ? earlier.testQuality : null;
+        return `${esc(formatPercent(found.testQuality))}${deltaSpan(changed(found.testQuality, previous, 2), false, 2, " п.п.")}`;
+      }
       if (id === "accepted") {
         if (found.needTutor === false) return "самопроверка";
         const accepted = found.homeworksAccepted || 0;
         const total = found.homeworksTotal || 0;
-        return `${accepted}/${total} · ${percent(accepted, total)}%`;
+        const previousCount = earlier && earlier.needTutor !== false ? (earlier.homeworksAccepted || 0) : null;
+        const previousRatio = earlier && earlier.needTutor !== false ? ratio(earlier.homeworksAccepted || 0, earlier.homeworksTotal || 0) : null;
+        return `${accepted}/${total} · ${esc(formatPercent(ratio(accepted, total)))}${deltaSpan(changed(accepted, previousCount, null), false, null, "")}${deltaSpan(changed(ratio(accepted, total), previousRatio, 2), false, 2, " п.п.")}`;
       }
       return String(found.needTutor === false ? 0 : (found.fixRequired || 0));
     }
@@ -609,7 +675,7 @@
           values: days.map((day) => {
             const done = (day.breakdown?.tests || []).filter((item) => courseAllowed(item.courseId) && item.done && typeof item.quality === "number");
             if (!done.length) return null;
-            return Math.round(done.reduce((sum, item) => sum + item.quality, 0) / done.length);
+            return done.reduce((sum, item) => sum + item.quality, 0) / done.length;
           }),
         }]));
       }
@@ -617,11 +683,15 @@
       const rows = items.map((item) => [
         esc(item.courseName),
         esc(item.name),
-        ...days.map((day) => {
+        ...days.map((day, index) => {
           const entry = item.byDay[day.day];
           if (!entry) return "—";
           if (!entry.done) return "не сдан";
-          return typeof entry.quality === "number" ? `${entry.quality}%` : "сдан";
+          if (typeof entry.quality !== "number") return "сдан";
+          const previousDay = index ? days[index - 1] : null;
+          const previous = previousDay ? item.byDay[previousDay.day] : null;
+          const previousQuality = previous && typeof previous.quality === "number" ? previous.quality : null;
+          return `${esc(formatPercent(entry.quality))}${deltaSpan(changed(entry.quality, previousQuality, 2), false, 2, " п.п.")}`;
         }),
       ]);
       return { drawn: drawn.join(""), headers, rows };
@@ -666,6 +736,21 @@
         ...days.map((day) => item.byDay[day.day] ? "РНО" : "—"),
       ]);
       return { drawn, headers, rows };
+    }
+
+    function dayLabel(day) {
+      if (!day.capturedAt) return esc(day.day);
+      const date = new Date(day.capturedAt);
+      if (Number.isNaN(date.getTime())) return esc(day.day);
+      const formatted = new Intl.DateTimeFormat("ru-RU", {
+        timeZone: "Europe/Moscow",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(date);
+      return `${esc(formatted)} мск`;
     }
 
     function showCaptured() {

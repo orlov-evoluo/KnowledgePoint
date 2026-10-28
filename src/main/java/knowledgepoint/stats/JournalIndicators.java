@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 
 public final class JournalIndicators {
 
-  private static final Pattern QUALITY = Pattern.compile("(\\d+)\\s*%");
+  private static final Pattern QUALITY = Pattern.compile("(\\d+(?:[.,]\\d+)?)\\s*%");
 
   private JournalIndicators() {
   }
@@ -53,7 +53,7 @@ public final class JournalIndicators {
     ArrayNode homeworks = json.createArrayNode();
     ArrayNode revisions = json.createArrayNode();
     long qualityWeight = 0;
-    long qualitySum = 0;
+    double qualitySum = 0;
     boolean qualityPending = false;
 
     JsonNode listed = journal.path("courses");
@@ -72,7 +72,7 @@ public final class JournalIndicators {
         JsonNode test = stats == null ? null : stats.get("test");
         int courseTestsCompleted = test == null || test.isNull() ? 0 : test.path("completed").asInt(0);
         int courseTestsTotal = test == null || test.isNull() ? 0 : test.path("total").asInt(0);
-        Integer quality = quality(detail);
+        Double quality = quality(detail);
         boolean needTutor = course.has("needTutor")
             ? course.path("needTutor").asBoolean(true)
             : detail.path("course").path("needTutor").asBoolean(true);
@@ -97,7 +97,7 @@ public final class JournalIndicators {
           qualityPending = true;
         }
         if (quality != null && courseTestsCompleted > 0) {
-          qualitySum += (long) quality * courseTestsCompleted;
+          qualitySum += quality * courseTestsCompleted;
           qualityWeight += courseTestsCompleted;
         }
 
@@ -137,7 +137,7 @@ public final class JournalIndicators {
     if (qualityPending || qualityWeight == 0) {
       summary.putNull("testQuality");
     } else {
-      summary.put("testQuality", Math.round((double) qualitySum / qualityWeight));
+      summary.put("testQuality", round2(qualitySum / qualityWeight));
     }
     summary.put("homeworksAccepted", number(journal, "general.homeworks.accepted"));
     summary.put("homeworksTotal", number(journal, "general.homeworks.total"));
@@ -173,12 +173,12 @@ public final class JournalIndicators {
     if (!hasTest) {
       return;
     }
-    Integer quality = null;
+    Double quality = null;
     boolean done = false;
     if (test != null && !test.isNull()) {
       JsonNode ratio = test.get("successRation");
       if (ratio != null && ratio.isNumber()) {
-        quality = (int) Math.round(ratio.asDouble());
+        quality = round2(ratio.asDouble());
         done = true;
       }
       JsonNode score = test.get("score");
@@ -213,7 +213,7 @@ public final class JournalIndicators {
     };
   }
 
-  private static Integer quality(JsonNode detail) {
+  private static Double quality(JsonNode detail) {
     JsonNode stats = detail.path("course").path("generalStats");
     if (!stats.isArray()) {
       return null;
@@ -224,10 +224,14 @@ public final class JournalIndicators {
       }
       Matcher matcher = QUALITY.matcher(item.path("subTitle").asText(""));
       if (matcher.find()) {
-        return Integer.parseInt(matcher.group(1));
+        return round2(Double.parseDouble(matcher.group(1).replace(',', '.')));
       }
     }
     return null;
+  }
+
+  private static double round2(double value) {
+    return Math.round(value * 100.0) / 100.0;
   }
 
   private static String text(JsonNode node, String field, String fallback) {
