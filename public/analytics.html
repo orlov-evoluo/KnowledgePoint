@@ -247,6 +247,7 @@
       ["tests", "Количество тестов", "#5b4b8a"],
       ["quality", "Качество", "#1d5c99"],
       ["accepted", "Сдано", "#0f6b62"],
+      ["outstanding", "Не сдано", "#8a3a3a"],
       ["revisions", "РНО", "#a15c07"],
     ];
     const HOMEWORK_STATUS = [
@@ -265,7 +266,7 @@
     let view = loadView();
 
     function loadView() {
-      const fallback = { scope: "summary", courses: [], metrics: ["tests", "quality", "accepted", "revisions"], statuses: [], chart: true, table: true };
+      const fallback = { scope: "summary", courses: [], metrics: ["tests", "quality", "accepted", "outstanding", "revisions"], statuses: [], chart: true, table: true };
       try {
         const stored = JSON.parse(localStorage.getItem(VIEW_KEY) || "null");
         if (!stored || typeof stored !== "object") return fallback;
@@ -273,7 +274,7 @@
         return {
           scope,
           courses: Array.isArray(stored.courses) ? stored.courses.map(Number).filter(Number.isFinite) : [],
-          metrics: Array.isArray(stored.metrics) ? stored.metrics.filter((id) => METRICS.some(([metric]) => metric === id)) : fallback.metrics,
+          metrics: storedMetrics(stored.metrics, fallback.metrics),
           statuses: Array.isArray(stored.statuses) ? stored.statuses.map(String) : [],
           chart: stored.chart !== false,
           table: stored.table !== false,
@@ -281,6 +282,16 @@
       } catch {
         return fallback;
       }
+    }
+
+    function storedMetrics(stored, fallback) {
+      if (!Array.isArray(stored)) return fallback;
+      const known = stored.filter((id) => METRICS.some(([metric]) => metric === id));
+      const previous = ["tests", "quality", "accepted", "revisions"];
+      if (known.length === previous.length && previous.every((id, index) => known[index] === id)) {
+        return ["tests", "quality", "accepted", "outstanding", "revisions"];
+      }
+      return known;
     }
 
     function saveView() {
@@ -378,6 +389,7 @@
           testQuality: typeof day.testQuality === "number" ? day.testQuality : null,
           accepted: day.homeworks.accepted,
           homeworksTotal: day.homeworks.total,
+          outstanding: Math.max(0, (day.homeworks.total || 0) - (day.homeworks.accepted || 0) - (day.homeworks.fixRequired || 0)),
           revisions: day.homeworks.fixRequired,
           selfOnly: false,
         };
@@ -392,6 +404,7 @@
           testQuality: typeof summary.testQuality === "number" ? summary.testQuality : null,
           accepted: summary.homeworksAccepted,
           homeworksTotal: summary.homeworksTotal,
+          outstanding: Math.max(0, (summary.homeworksTotal || 0) - (summary.homeworksAccepted || 0) - (summary.fixRequired || 0)),
           revisions: summary.fixRequired,
           selfOnly: false,
         };
@@ -400,6 +413,7 @@
       let testsTotal = 0;
       let accepted = 0;
       let homeworksTotal = 0;
+      let outstanding = 0;
       let revisions = 0;
       let weight = 0;
       let sum = 0;
@@ -421,6 +435,7 @@
         tutor = true;
         accepted += course.homeworksAccepted || 0;
         homeworksTotal += course.homeworksTotal || 0;
+        outstanding += Math.max(0, (course.homeworksTotal || 0) - (course.homeworksAccepted || 0) - (course.fixRequired || 0));
         revisions += course.fixRequired || 0;
       });
       return {
@@ -429,6 +444,7 @@
         testQuality: pending || !weight ? null : sum / weight,
         accepted: tutor ? accepted : null,
         homeworksTotal: tutor ? homeworksTotal : null,
+        outstanding: tutor ? outstanding : null,
         revisions,
         selfOnly: self && !tutor,
       };
@@ -441,6 +457,10 @@
         if (summary.accepted == null) return null;
         return ratio(summary.accepted, summary.homeworksTotal);
       }
+      if (id === "outstanding") {
+        if (summary.outstanding == null) return null;
+        return summary.outstanding;
+      }
       return summary.revisions;
     }
 
@@ -452,6 +472,10 @@
       if (id === "accepted") {
         if (summary.selfOnly || summary.accepted == null) return "самопроверка";
         return `${summary.accepted}/${summary.homeworksTotal} · ${formatPercent(ratio(summary.accepted, summary.homeworksTotal))}`;
+      }
+      if (id === "outstanding") {
+        if (summary.selfOnly || summary.outstanding == null) return "самопроверка";
+        return String(summary.outstanding);
       }
       return String(summary.revisions);
     }
@@ -480,6 +504,10 @@
             2,
             " п.п."
           );
+      }
+      if (id === "outstanding") {
+        if (current.outstanding == null || previous.outstanding == null) return text;
+        return text + deltaSpan(changed(current.outstanding, previous.outstanding, null), true, null, "");
       }
       return text + deltaSpan(changed(current.revisions, previous.revisions, null), true, null, "");
     }
@@ -612,6 +640,10 @@
               if (found.needTutor === false || !found.homeworksTotal) return null;
               return ratio(found.homeworksAccepted || 0, found.homeworksTotal);
             }
+            if (id === "outstanding") {
+              if (found.needTutor === false) return null;
+              return Math.max(0, (found.homeworksTotal || 0) - (found.homeworksAccepted || 0) - (found.fixRequired || 0));
+            }
             return found.needTutor === false ? 0 : (found.fixRequired || 0);
           }),
         })))).join("");
@@ -649,6 +681,14 @@
         const previousCount = earlier && earlier.needTutor !== false ? (earlier.homeworksAccepted || 0) : null;
         const previousRatio = earlier && earlier.needTutor !== false ? ratio(earlier.homeworksAccepted || 0, earlier.homeworksTotal || 0) : null;
         return `${accepted}/${total} · ${esc(formatPercent(ratio(accepted, total)))}${deltaSpan(changed(accepted, previousCount, null), false, null, "")}${deltaSpan(changed(ratio(accepted, total), previousRatio, 2), false, 2, " п.п.")}`;
+      }
+      if (id === "outstanding") {
+        if (found.needTutor === false) return "самопроверка";
+        const outstanding = Math.max(0, (found.homeworksTotal || 0) - (found.homeworksAccepted || 0) - (found.fixRequired || 0));
+        const earlierOutstanding = earlier && earlier.needTutor !== false
+          ? Math.max(0, (earlier.homeworksTotal || 0) - (earlier.homeworksAccepted || 0) - (earlier.fixRequired || 0))
+          : null;
+        return `${outstanding}${deltaSpan(changed(outstanding, earlierOutstanding, null), true, null, "")}`;
       }
       return String(found.needTutor === false ? 0 : (found.fixRequired || 0));
     }
