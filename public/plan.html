@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>График</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <style>
+    :root {
+      --bg: #f3efe6;
+      --ink: #1f1a14;
+      --muted: #6d655c;
+      --line: #e3dacd;
+      --card: #fffcf7;
+      --watched: #1f7a4d;
+      --sent: #1d5c99;
+      --fix: #a15c07;
+      --todo: #8a3a3a;
+      --self: #5b4b8a;
+      --header-pad: 1.1rem;
+      --header-row: 4.6rem;
+    }
+
+    html { scrollbar-gutter: stable; }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      line-height: 1.4;
+    }
+
+    .shell {
+      width: min(76rem, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: calc(var(--header-pad) + var(--header-row)) 0 2rem;
+    }
+
+    .site-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 5;
+      background: var(--bg);
+      padding: var(--header-pad) 1rem 0;
+    }
+
+    .top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      width: min(76rem, 100%);
+      min-height: var(--header-row);
+      margin: 0 auto;
+    }
+
+    .title { min-width: 0; flex: 1 1 auto; }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0.2rem 0 0;
+      font-family: Georgia, "Palatino Linotype", serif;
+      font-size: clamp(1.7rem, 3vw, 2.2rem);
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tabs { display: flex; gap: 0.45rem; flex: 0 0 auto; flex-wrap: nowrap; align-items: center; }
+
+    .panel { display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: center; margin-top: 0.35rem; }
+
+    .nav, .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--ink);
+      background: transparent;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      font: inherit;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .nav { min-height: 2.5rem; padding: 0.35rem 0.85rem; }
+
+    .pill { min-height: 1.9rem; padding: 0.15rem 0.6rem; font-size: 0.85rem; }
+
+    .nav.current, .pill[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+
+    .note, .hint { color: var(--muted); margin: 0.7rem 0 0; }
+
+    .hint { margin-top: 0.4rem; font-size: 0.85rem; }
+
+    .toolbar { margin-top: 0.55rem; }
+
+    .label { color: var(--muted); font-size: 0.8rem; min-width: 5.2rem; }
+
+    .fold { margin-top: 0.3rem; }
+
+    .fold summary {
+      width: fit-content;
+      color: var(--muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .band { margin-top: 0.9rem; }
+
+    .band h2 { margin: 0 0 0.3rem; font-size: 1.05rem; font-weight: 600; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--todo);
+      border-radius: 0.8rem;
+      padding: 0.5rem 0.65rem;
+      margin-top: 0.3rem;
+    }
+
+    .card.rno { border-left-color: var(--fix); }
+    .card.self { border-left-color: var(--self); }
+    .card.sent {
+      border-color: #a8d5b8;
+      border-left-width: 3px;
+      border-left-color: #a8d5b8;
+      background: var(--card);
+    }
+
+    .card.sent .card-title,
+    .card.sent .meta {
+      color: inherit;
+      font-style: normal;
+      font-weight: 400;
+      text-decoration: none;
+    }
+
+    .card.sent summary { cursor: pointer; }
+
+    .card.sent .card-title { display: block; }
+
+    .card.sent .meta { display: block; }
+
+    .card.sent .sent-body { margin-top: 0.35rem; }
+
+    .card.sent:not([open]) > .sent-body { display: none; }
+
+    .card-top { display: flex; justify-content: space-between; gap: 0.8rem; align-items: baseline; }
+
+    .card h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+
+    .card time { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+
+    .meta, .why, .more { color: var(--muted); margin: 0.2rem 0 0; }
+
+    .why, .more { font-size: 0.85rem; }
+
+    .links { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-top: 0.4rem; }
+
+    .links a { color: var(--sent); }
+
+    .chip {
+      display: inline-block;
+      margin-top: 0.35rem;
+      padding: 0.1rem 0.45rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      color: var(--card);
+      background: var(--todo);
+    }
+
+    .chip.rno { background: var(--fix); }
+    .chip.self { background: var(--self); }
+    .chip.sent {
+      background: var(--card);
+      color: var(--ink);
+      border: 1px solid #a8d5b8;
+    }
+
+    .mark { margin-top: 0.35rem; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="site-header">
+      <div class="top">
+        <div class="title">
+          <p class="eyebrow">Успеваемость</p>
+          <h1 id="name">График</h1>
+        </div>
+        <nav class="tabs" aria-label="Страницы">
+          <a class="nav" href="/">Журнал</a>
+          <a class="nav" href="/schedule">Расписание</a>
+          <a class="nav current" href="/plan" aria-current="page">График</a>
+          <a class="nav" href="/analytics">Динамика</a>
+        </nav>
+      </div>
+    </header>
+    <p class="note" id="note">Загрузка</p>
+    <div class="toolbar" id="toolbar" hidden>
+      <div class="panel" id="blocks"></div>
+      <div class="panel" id="order"></div>
+      <div class="panel" id="limit"></div>
+      <div class="panel" id="toggles"></div>
+      <details class="fold" id="main-fold">
+        <summary id="main-summary">Основные</summary>
+        <div class="panel" id="main-pills"></div>
+      </details>
+      <details class="fold" id="hidden-fold">
+        <summary id="hidden-summary">Скрыть</summary>
+        <div class="panel" id="hidden-pills"></div>
+      </details>
+      <p class="hint">Сначала сегодняшние уроки, затем РНО, затем хвост. В хвосте курсы чередуются: сначала старые работы предметов с самым низким процентом выполнения. «Отправлено» сворачивает плашку. Чтобы снять отметку, разверните её.</p>
+    </div>
+    <div id="queue"></div>
+  </div>
+  <script>
+    const CABINET = "https://lk.tochka-school.ru/#";
+    const ZONE = "Europe/Moscow";
+    const PAGE = "График";
+    const VIEW_KEY = "knowledgepoint.plan.view";
+    const SENT_KEY = "knowledgepoint.plan.sent";
+    const BLOCKS = [
+      ["today", "Сегодня"],
+      ["rno", "РНО"],
+      ["tail", "Хвост"],
+    ];
+    const ORDERS = [
+      ["completion", "По выполнению"],
+      ["main", "Сначала основные"],
+      ["main-only", "Только основные"],
+    ];
+    const LIMITS = [
+      [5, "5 в хвосте"],
+      [8, "8 в хвосте"],
+      [0, "Весь хвост"],
+    ];
+    const heading = document.querySelector("#name");
+    const note = document.querySelector("#note");
+    const toolbar = document.querySelector("#toolbar");
+    const queue = document.querySelector("#queue");
+    let view = loadView();
+    let sent = loadSent();
+    let model = null;
+
+    function setHeading(name) {
+      const text = name ? `${name} : ${PAGE}` : PAGE;
+      heading.textContent = text;
+      document.title = text;
+    }
+
+    function loadView() {
+      const fallback = {
+        blocks: ["today", "rno", "tail"],
+        main: [],
+        hidden: [],
+        activeOnly: true,
+        self: false,
+        order: "completion",
+        limit: 8,
+      };
+      try {
+        const stored = JSON.parse(localStorage.getItem(VIEW_KEY) || "null");
+        if (!stored || typeof stored !== "object") return fallback;
+        const blocks = Array.isArray(stored.blocks) ? stored.blocks.filter((id) => BLOCKS.some(([block]) => block === id)) : fallback.blocks;
+        const order = stored.order === "main" || stored.order === "main-only" ? stored.order : "completion";
+        const limit = LIMITS.some(([value]) => value === stored.limit) ? stored.limit : fallback.limit;
+        return {
+          blocks,
+          main: Array.isArray(stored.main) ? stored.main.map(Number).filter(Number.isFinite) : [],
+          hidden: Array.isArray(stored.hidden) ? stored.hidden.map(Number).filter(Number.isFinite) : [],
+          activeOnly: stored.activeOnly !== false,
+          self: stored.self === true,
+          order,
+          limit,
+        };
+      } catch {
+        return fallback;
+      }
+    }
+
+    function saveView() {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+    }
+
+    function loadSent() {
+      try {
+        const stored = JSON.parse(localStorage.getItem(SENT_KEY) || "[]");
+        return new Set(Array.isArray(stored) ? stored.map(String) : []);
+      } catch {
+        return new Set();
+      }
+    }
+
+    function saveSent() {
+      localStorage.setItem(SENT_KEY, JSON.stringify([...sent]));
+    }
+
+    function itemKey(item) {
+      return `${item.courseId}:${item.lessonId}`;
+    }
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char]));
+    }
+
+    function pad(value) {
+      return String(value).padStart(2, "0");
+    }
+
+    function keyOf(year, month, day) {
+      return `${year}-${pad(month)}-${pad(day)}`;
+    }
+
+    function daysInMonth(year, month) {
+      return new Date(Date.UTC(year, month, 0)).getUTCDate();
+    }
+
+    function moscowToday() {
+      const parts = new Intl.DateTimeFormat("en-CA", { timeZone: ZONE, year: "numeric", month: "2-digit", day: "2-digit" })
+        .formatToParts(new Date());
+      const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return { year: Number(value.year), month: Number(value.month), day: Number(value.day), key: `${value.year}-${value.month}-${value.day}` };
+    }
+
+    function shiftMonth(year, month, delta) {
+      const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+      return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1 };
+    }
+
+    function moscowStamp(iso) {
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return null;
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      }).formatToParts(date);
+      const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return { key: `${value.year}-${value.month}-${value.day}`, time: `${value.hour}:${value.minute}` };
+    }
+
+    function daysBetween(earlier, later) {
+      const start = Date.parse(`${earlier}T00:00:00Z`);
+      const end = Date.parse(`${later}T00:00:00Z`);
+      if (Number.isNaN(start) || Number.isNaN(end)) return null;
+      return Math.round((end - start) / 86400000);
+    }
+
+    function pluralDays(count) {
+      const mod10 = count % 10;
+      const mod100 = count % 100;
+      if (mod10 === 1 && mod100 !== 11) return `${count} день`;
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} дня`;
+      return `${count} дней`;
+    }
+
+    function formatShare(value) {
+      return `${(value * 100).toFixed(2).replace(".", ",")}%`;
+    }
+
+    const TOKEN_KEY = "knowledgepoint.token";
+
+    function browserToken() {
+      const value = localStorage.getItem(TOKEN_KEY);
+      return value && value.trim() ? value.trim() : "";
+    }
+
+    function authHeaders() {
+      const token = browserToken();
+      if (!token) return {};
+      return { Authorization: token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}` };
+    }
+
+    async function api(path) {
+      const response = await fetch("/api" + path, { headers: authHeaders() });
+      const body = await response.json().catch(() => ({}));
+      if (response.status === 401) throw new Error("Кабинет отклонил токен");
+      if (!response.ok) throw new Error(body.error || "Не удалось загрузить данные");
+      return body;
+    }
+
+    function cabinet(path) {
+      return CABINET + path;
+    }
+
+    function link(href, label) {
+      return `<a href="${esc(href)}" target="_blank" rel="noopener">${label}</a>`;
+    }
+
+    function lessonPath(courseId, lessonId, parallelId) {
+      const base = `/course/${courseId}/lesson/${lessonId}`;
+      return parallelId == null ? base : `${base}/parallel/${parallelId}`;
+    }
+
+    function chatPath(lesson) {
+      if (!lesson.chatId || lesson.messageId == null || lesson.messageId === "") return null;
+      return `/personal-chat/${lesson.chatId}?initialMessageId=${lesson.messageId}`;
+    }
+
+    function completionOf(course) {
+      const total = course.homeworks?.total || 0;
+      const accepted = course.homeworks?.accepted || 0;
+      return total ? accepted / total : 1;
+    }
+
+    function outstandingOf(course) {
+      const total = course.homeworks?.total || 0;
+      const accepted = course.homeworks?.accepted || 0;
+      const fix = course.homeworks?.fixRequired || 0;
+      const count = Math.max(0, total - accepted - fix);
+      return { count, share: total ? count / total : 0 };
+    }
+
+    function isTesting(name) {
+      return /тестирован/i.test(name || "");
+    }
+
+    function workKind(lesson, needTutor) {
+      if (isTesting(lesson.name)) return null;
+      if (needTutor === false) return "self";
+      if (lesson.homework == null) return null;
+      if (lesson.status === "fix_required") return "rno";
+      if (lesson.status === "rejected") return "todo";
+      return null;
+    }
+
+    async function loadDates() {
+      const today = moscowToday();
+      const months = [];
+      for (let delta = -11; delta <= 0; delta += 1) months.push(shiftMonth(today.year, today.month, delta));
+      const pages = await Promise.all(months.map((month) => {
+        const start = keyOf(month.year, month.month, 1);
+        const end = keyOf(month.year, month.month, daysInMonth(month.year, month.month));
+        return api(`/schedule?startAt=${start}&endAt=${end}`);
+      }));
+      const dates = new Map();
+      pages.forEach((page) => {
+        (page.schedule || []).forEach((item) => {
+          const stamp = moscowStamp(item.startedAt);
+          if (!stamp || item.courseId == null || item.lessonId == null) return;
+          const key = `${item.courseId}:${item.lessonId}`;
+          const previous = dates.get(key);
+          if (previous && previous.key <= stamp.key) return;
+          dates.set(key, { key: stamp.key, time: stamp.time, parallelId: item.parallelId ?? null });
+        });
+      });
+      return dates;
+    }
+
+    async function ensureLessons() {
+      const pending = model.courses.filter((course) => {
+        if (course.lessons) return false;
+        return view.activeOnly ? course.list === "active" : true;
+      });
+      await Promise.all(pending.map(async (course) => {
+        const detail = await api(`/journal/${model.studentId}/detail/${course.id}`);
+        const source = detail.course || {};
+        course.needTutor = source.needTutor !== false;
+        course.lessons = (detail.lessons || []).map((lesson, index) => ({
+          id: lesson.id,
+          name: lesson.name || "Урок",
+          status: lesson.status,
+          homework: lesson.homework,
+          chatId: lesson.chatId,
+          messageId: lesson.messageId,
+          index,
+        }));
+      }));
+    }
+
+    function collect() {
+      const items = [];
+      model.courses.forEach((course) => {
+        if (view.hidden.includes(course.id)) return;
+        if (view.activeOnly && course.list !== "active") return;
+        if (!course.lessons) return;
+        const score = outstandingOf(course);
+        course.lessons.forEach((lesson) => {
+          const kind = workKind(lesson, course.needTutor);
+          if (!kind || (kind === "self" && !view.self)) return;
+          const stamp = model.dates.get(`${course.id}:${lesson.id}`);
+          items.push({
+            courseId: course.id,
+            courseName: course.name,
+            lessonId: lesson.id,
+            lessonName: lesson.name,
+            index: lesson.index,
+            kind,
+            date: stamp ? stamp.key : null,
+            time: stamp ? stamp.time : null,
+            parallelId: stamp ? stamp.parallelId : null,
+            chat: chatPath(lesson),
+            count: score.count,
+            share: score.share,
+            completion: completionOf(course),
+          });
+        });
+      });
+      return items;
+    }
+
+    function compareOldest(a, b) {
+      if (a.date !== b.date) {
+        if (!a.date) return -1;
+        if (!b.date) return 1;
+        return a.date < b.date ? -1 : 1;
+      }
+      return a.courseName.localeCompare(b.courseName, "ru") || a.index - b.index;
+    }
+
+    function tailOrder() {
+      if (view.order === "main" && !view.main.length) return "completion";
+      return view.order;
+    }
+
+    function sortTail(items) {
+      const order = tailOrder();
+      const source = order === "main-only" ? items.filter((item) => view.main.includes(item.courseId)) : items;
+      const groups = new Map();
+      source.forEach((item) => {
+        if (!groups.has(item.courseId)) groups.set(item.courseId, []);
+        groups.get(item.courseId).push(item);
+      });
+      const courses = [...groups.values()].map((list) => {
+        list.sort(compareOldest);
+        return {
+          list,
+          completion: list[0].completion,
+          main: view.main.includes(list[0].courseId),
+        };
+      });
+      courses.sort((a, b) => {
+        if (order === "main") {
+          const aMain = a.main ? 0 : 1;
+          const bMain = b.main ? 0 : 1;
+          if (aMain !== bMain) return aMain - bMain;
+        }
+        if (a.completion !== b.completion) return a.completion - b.completion;
+        return compareOldest(a.list[0], b.list[0]);
+      });
+      const result = [];
+      let pending = true;
+      while (pending) {
+        pending = false;
+        courses.forEach((course) => {
+          if (!course.list.length) return;
+          result.push(course.list.shift());
+          pending = true;
+        });
+      }
+      return result;
+    }
+
+    function bands() {
+      const items = collect();
+      const today = [];
+      const rest = [];
+      items.forEach((item) => {
+        if (item.date === model.today.key && (item.kind !== "self" || view.self)) today.push(item);
+        else if (item.kind !== "self") rest.push(item);
+      });
+      today.sort((a, b) => (a.time || "").localeCompare(b.time || "") || compareOldest(a, b));
+      const todayKeys = new Set(today.map((item) => `${item.courseId}:${item.lessonId}`));
+      const rno = rest.filter((item) => item.kind === "rno" && !todayKeys.has(`${item.courseId}:${item.lessonId}`)).sort(compareOldest);
+      const tail = sortTail(rest.filter((item) => item.kind === "todo"));
+      return { today, rno, tail };
+    }
+
+    function ageText(item) {
+      if (!item.date) return "без даты в расписании";
+      const days = daysBetween(item.date, model.today.key);
+      if (days == null || days <= 0) return "сегодня";
+      return pluralDays(days);
+    }
+
+    function why(item, band) {
+      if (band === "today") return `сегодня${item.time ? `, ${item.time}` : ""}`;
+      if (band === "rno") {
+        return item.date ? `на доработке ${ageText(item)}` : "на доработке, без даты в расписании";
+      }
+      const order = tailOrder();
+      const age = ageText(item);
+      const done = `выполнено ${formatShare(item.completion)}, ${age}`;
+      if (order === "main" && view.main.includes(item.courseId)) return `основной предмет, ${done}`;
+      return done;
+    }
+
+    function card(item, band) {
+      const path = lessonPath(item.courseId, item.lessonId, item.parallelId);
+      const links = [link(cabinet(`${path}?expandHomework=true`), "Домашка")];
+      if (item.kind === "rno" && item.chat) links.unshift(link(cabinet(item.chat), "РНО"));
+      const marked = sent.has(itemKey(item));
+      const label = item.kind === "rno" ? "На доработке" : item.kind === "self" ? "Самопроверка" : "Не сделано";
+      const tone = item.kind === "todo" ? "" : item.kind;
+      const body = `<span class="chip ${tone}">${label}</span>
+        <p class="why">${esc(why(item, band))}</p>
+        <div class="links">${links.join("")}</div>
+        <button type="button" class="pill mark" data-sent="${item.courseId}:${item.lessonId}" aria-pressed="${marked}">${marked ? "Снять отметку" : "Отправлено"}</button>`;
+      const heading = `<div class="card-top">
+          <h3>${esc(item.courseName)}</h3>
+          ${band === "today" && item.time ? `<time>${esc(item.time)}</time>` : ""}
+        </div>
+        <p class="meta">${esc(item.lessonName)}</p>`;
+      if (!marked) {
+        return `<article class="card ${tone}">${heading}${body}</article>`;
+      }
+      return `<details class="card ${tone} sent">
+        <summary>
+          <span class="card-title">${esc(item.courseName)}</span>
+          <span class="meta">${esc(item.lessonName)}</span>
+          <span class="chip sent">Отправлено</span>
+        </summary>
+        <div class="sent-body">${body}</div>
+      </details>`;
+    }
+
+    function section(id, title, items, limited) {
+      if (!view.blocks.includes(id)) return "";
+      const body = items.length
+        ? items.map((item) => card(item, id)).join("")
+        : `<p class="note">В этом блоке работ нет.</p>`;
+      const more = limited ? `<p class="more">В хвосте ещё ${limited}. Можно показать весь хвост.</p>` : "";
+      return `<section class="band"><h2>${title}${items.length ? ` · ${items.length}` : ""}</h2>${body}${more}</section>`;
+    }
+
+    function paintControls() {
+      document.querySelector("#blocks").innerHTML = `<span class="label">Блоки</span>${BLOCKS.map(([id, label]) =>
+        `<button type="button" class="pill" data-block="${id}" aria-pressed="${view.blocks.includes(id)}">${label}</button>`
+      ).join("")}`;
+      document.querySelector("#order").innerHTML = `<span class="label">Хвост</span>${ORDERS.map(([id, label]) =>
+        `<button type="button" class="pill" data-order="${id}" aria-pressed="${view.order === id}">${label}</button>`
+      ).join("")}`;
+      document.querySelector("#limit").innerHTML = `<span class="label">Сколько</span>${LIMITS.map(([value, label]) =>
+        `<button type="button" class="pill" data-limit="${value}" aria-pressed="${view.limit === value}">${label}</button>`
+      ).join("")}`;
+      document.querySelector("#toggles").innerHTML = `<span class="label">Ещё</span>
+        <button type="button" class="pill" data-toggle="activeOnly" aria-pressed="${view.activeOnly}">Только активные</button>
+        <button type="button" class="pill" data-toggle="self" aria-pressed="${view.self}">Самопроверка сегодня</button>`;
+      const courses = model.courses.filter((course) => !view.activeOnly || course.list === "active");
+      const pills = (selected, name) => courses.map((course) =>
+        `<button type="button" class="pill" data-${name}="${course.id}" aria-pressed="${selected.includes(course.id)}">${esc(course.name)}</button>`
+      ).join("") || `<span class="hint">Курсов нет.</span>`;
+      document.querySelector("#main-summary").textContent = `Основные${view.main.length ? ` · ${view.main.length}` : ""}`;
+      document.querySelector("#hidden-summary").textContent = `Скрыть${view.hidden.length ? ` · ${view.hidden.length}` : ""}`;
+      document.querySelector("#main-pills").innerHTML = pills(view.main, "main");
+      document.querySelector("#hidden-pills").innerHTML = pills(view.hidden, "hidden");
+    }
+
+    function paint() {
+      paintControls();
+      if (!view.blocks.length) {
+        queue.innerHTML = `<p class="note">Включите хотя бы один блок.</p>`;
+        return;
+      }
+      const grouped = bands();
+      const limit = view.limit > 0 ? view.limit : grouped.tail.length;
+      const shown = grouped.tail.slice(0, limit);
+      const hiddenTail = Math.max(0, grouped.tail.length - shown.length);
+      queue.innerHTML = [
+        section("today", "Сегодня", grouped.today, 0),
+        section("rno", "РНО", grouped.rno, 0),
+        section("tail", "Хвост", shown, hiddenTail),
+      ].join("");
+    }
+
+    function toggle(list, value) {
+      const index = list.indexOf(value);
+      if (index >= 0) list.splice(index, 1);
+      else list.push(value);
+    }
+
+    queue.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-sent]");
+      if (!button) return;
+      const key = button.dataset.sent;
+      if (sent.has(key)) sent.delete(key);
+      else sent.add(key);
+      saveSent();
+      paint();
+    });
+
+    toolbar.addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      if (button.dataset.block) toggle(view.blocks, button.dataset.block);
+      else if (button.dataset.order) view.order = button.dataset.order;
+      else if (button.dataset.limit != null) view.limit = Number(button.dataset.limit);
+      else if (button.dataset.toggle) view[button.dataset.toggle] = !view[button.dataset.toggle];
+      else if (button.dataset.main) toggle(view.main, Number(button.dataset.main));
+      else if (button.dataset.hidden) toggle(view.hidden, Number(button.dataset.hidden));
+      else return;
+      saveView();
+      const needsLessons = button.dataset.toggle === "activeOnly" && !view.activeOnly;
+      if (!needsLessons) {
+        paint();
+        return;
+      }
+      note.textContent = "Загрузка";
+      ensureLessons().then(() => {
+        note.textContent = "";
+        paint();
+      }).catch((error) => {
+        note.textContent = error.message;
+      });
+    });
+
+    async function load() {
+      if (!browserToken()) {
+        setHeading("");
+        toolbar.hidden = true;
+        note.textContent = "Сохраните токен кабинета на странице журнала.";
+        return;
+      }
+      const profile = await api("/profile");
+      setHeading(`${profile.client.firstName || ""} ${profile.client.lastName || ""}`.trim());
+      const studentId = profile.client.id;
+      const [active, finished, dates] = await Promise.all([
+        api(`/journal/${studentId}/active`),
+        api(`/journal/${studentId}/allfinished`),
+        loadDates(),
+      ]);
+      const courses = [];
+      const seen = new Set();
+      [["active", active], ["allfinished", finished]].forEach(([list, journal]) => {
+        (journal.courses || []).forEach((course) => {
+          if (!course.id || seen.has(course.id)) return;
+          seen.add(course.id);
+          courses.push({
+            id: course.id,
+            name: course.courseName || "Курс",
+            list,
+            needTutor: course.needTutor !== false,
+            homeworks: course.homeworks || { accepted: 0, total: 0, fixRequired: 0 },
+            lessons: null,
+          });
+        });
+      });
+      model = { studentId, courses, dates, today: moscowToday() };
+      await ensureLessons();
+      note.textContent = "";
+      toolbar.hidden = false;
+      paint();
+    }
+
+    load().catch((error) => {
+      note.textContent = error.message;
+    });
+  </script>
+</body>
+</html>

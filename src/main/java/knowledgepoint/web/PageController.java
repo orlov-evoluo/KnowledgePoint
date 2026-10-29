@@ -35,6 +35,16 @@ public class PageController {
     return html(sibling("schedule.html"));
   }
 
+  @GetMapping("/plan")
+  public ResponseEntity<String> plan() throws IOException {
+    return html(sibling("plan.html"));
+  }
+
+  @GetMapping("/login")
+  public ResponseEntity<String> login() throws IOException {
+    return html(sibling("login.html"));
+  }
+
   @GetMapping("/favicon.svg")
   public ResponseEntity<String> favicon() throws IOException {
     Path file = sibling("favicon.svg");
