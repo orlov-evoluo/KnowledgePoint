@@ -75,7 +75,27 @@ class LoginApiTest {
         org.mockito.ArgumentMatchers.argThat(body ->
             body.contains("\"username\":\"pupil\"") && body.contains("\"password\":\"secret\"")),
         org.mockito.ArgumentMatchers.<Map<String, String>>argThat(headers ->
-            CabinetLogin.SERVICE_VERSION.equals(headers.get("x-service-version"))));
+            "2.1.5+592".equals(headers.get("x-service-version"))));
+  }
+
+  @Test
+  void serviceVersionComesFromTheForm() throws Exception {
+    when(cabinet.post(anyString(), anyString(), org.mockito.ArgumentMatchers.<Map<String, String>>any()))
+        .thenReturn(new CabinetResponse(200, """
+            {"token":{"accessToken":"%s","accessExpires":86400,"refreshToken":"refresh-hidden","refreshExpires":1}}
+            """.formatted(ACCESS)));
+
+    mvc.perform(post("/api/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"username\":\"pupil\",\"password\":\"secret\",\"version\":\"9.8.7\",\"build\":\"42\"}"))
+        .andExpect(status().isOk());
+
+    verify(cabinet).post(
+        eq(CabinetLogin.PATH),
+        org.mockito.ArgumentMatchers.argThat(body ->
+            body.contains("\"username\":\"pupil\"") && !body.contains("9.8.7")),
+        org.mockito.ArgumentMatchers.<Map<String, String>>argThat(headers ->
+            "9.8.7+42".equals(headers.get("x-service-version"))));
   }
 
   @Test
@@ -105,6 +125,17 @@ class LoginApiTest {
         .andExpect(jsonPath("$.error").value("Неверный логин или пароль"))
         .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("humanMessage"))))
         .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("wrong"))));
+  }
+
+  @Test
+  void brokenServiceVersionDoesNotCallTheCabinet() throws Exception {
+    mvc.perform(post("/api/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"username\":\"pupil\",\"password\":\"secret\",\"version\":\"2.1.5\\n1\",\"build\":\"592\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error").value("Укажите версию и билд"));
+
+    verify(cabinet, never()).post(anyString(), anyString(), org.mockito.ArgumentMatchers.<Map<String, String>>any());
   }
 
   @Test

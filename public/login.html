@@ -121,6 +121,14 @@
       cursor: pointer;
     }
 
+    .pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.6rem;
+    }
+
+    .pair label { display: grid; gap: 0.35rem; }
+
     .login-form button:disabled { cursor: wait; opacity: 0.7; }
 
     .note { color: var(--muted); margin: 0.7rem 0 0; }
@@ -147,33 +155,76 @@
       <input id="username" name="username" autocomplete="username" spellcheck="false" required>
       <label for="password">Пароль</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <div class="pair">
+        <label>Версия
+          <input id="version" name="version" inputmode="decimal" autocomplete="off" spellcheck="false" required>
+        </label>
+        <label>Билд
+          <input id="build" name="build" inputmode="numeric" autocomplete="off" spellcheck="false" required>
+        </label>
+      </div>
       <button type="submit">Войти</button>
     </form>
     <p class="note" id="note">Токен сохранится в этом браузере.</p>
   </div>
   <script>
     const TOKEN_KEY = "knowledgepoint.token";
+    const VERSION_KEY = "knowledgepoint.service.version";
+    const BUILD_KEY = "knowledgepoint.service.build";
+    const DEFAULT_VERSION = "2.1.5";
+    const DEFAULT_BUILD = "592";
     const form = document.querySelector("#login-form");
     const username = document.querySelector("#username");
     const password = document.querySelector("#password");
+    const version = document.querySelector("#version");
+    const build = document.querySelector("#build");
     const note = document.querySelector("#note");
     const button = form.querySelector("button");
+
+    function stored(key, fallback) {
+      const value = (localStorage.getItem(key) || "").trim();
+      return value || fallback;
+    }
+
+    function rememberService() {
+      const nextVersion = version.value.trim();
+      const nextBuild = build.value.trim();
+      if (nextVersion) localStorage.setItem(VERSION_KEY, nextVersion);
+      if (nextBuild) localStorage.setItem(BUILD_KEY, nextBuild);
+    }
+
+    version.value = stored(VERSION_KEY, DEFAULT_VERSION);
+    build.value = stored(BUILD_KEY, DEFAULT_BUILD);
+    version.addEventListener("change", rememberService);
+    build.addEventListener("change", rememberService);
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const login = username.value.trim();
       const secret = password.value;
+      const serviceVersion = version.value.trim();
+      const serviceBuild = build.value.trim();
       if (!login || !secret.trim()) {
         note.textContent = "Введите логин и пароль";
         return;
       }
+      if (!serviceVersion || !serviceBuild) {
+        note.textContent = "Укажите версию и билд";
+        return;
+      }
+      rememberService();
       button.disabled = true;
       note.textContent = "Вход";
       try {
         const response = await fetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: login, password: secret }),
+          body: JSON.stringify({
+            username: login,
+            password: secret,
+            version: serviceVersion,
+            build: serviceBuild,
+          }),
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok || typeof body.token !== "string" || body.token.trim().length < 20) {

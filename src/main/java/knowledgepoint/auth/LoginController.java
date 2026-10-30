@@ -48,6 +48,10 @@ public class LoginController {
     if (username == null || password == null || username.length() > 200 || password.length() > 200) {
       return ResponseEntity.badRequest().body(new ErrorResponse("Введите логин и пароль"));
     }
+    String serviceVersion = serviceVersion(tree);
+    if (serviceVersion == null) {
+      return ResponseEntity.badRequest().body(new ErrorResponse("Укажите версию и билд"));
+    }
     ObjectNode body = json.createObjectNode();
     body.put("username", username);
     body.put("password", password);
@@ -56,7 +60,7 @@ public class LoginController {
       response = cabinet.post(
           CabinetLogin.PATH,
           json.writeValueAsString(body),
-          Map.of("x-service-version", CabinetLogin.SERVICE_VERSION));
+          Map.of("x-service-version", serviceVersion));
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
       return ResponseEntity.status(502).body(new ErrorResponse("Кабинет не ответил"));
@@ -90,6 +94,21 @@ public class LoginController {
     } catch (IOException exception) {
       return null;
     }
+  }
+
+  private static String serviceVersion(JsonNode tree) {
+    String version = text(tree.get("version"));
+    String build = text(tree.get("build"));
+    if (version == null) {
+      version = CabinetLogin.DEFAULT_VERSION;
+    }
+    if (build == null) {
+      build = CabinetLogin.DEFAULT_BUILD;
+    }
+    if (!version.matches("\\d+(?:\\.\\d+){1,3}") || !build.matches("\\d{1,8}")) {
+      return null;
+    }
+    return CabinetLogin.serviceVersion(version, build);
   }
 
   private static String text(JsonNode node) {
